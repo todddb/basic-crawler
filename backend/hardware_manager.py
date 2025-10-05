@@ -18,6 +18,8 @@ class HardwareManager:
         self.left_speed = 0
         self.right_speed = 0
         self._battery_voltage = None
+        self._battery_raw = None
+        self._battery_bytes = (None, None)
         self._last_battery_read = 0.0
 
         motors_cfg = self.config.get("motors", {})
@@ -44,6 +46,36 @@ class HardwareManager:
         self.battery_full_voltage = float(motors_cfg.get("battery_full_voltage", 12.6))
         self.battery_empty_voltage = float(motors_cfg.get("battery_empty_voltage", 9.0))
         self.battery_refresh = float(motors_cfg.get("battery_refresh", 1.5))
+        self.battery_word_order = str(motors_cfg.get("battery_word_order", "auto")).lower()
+
+        try:
+            self.battery_shift = int(motors_cfg.get("battery_shift", 0))
+        except (TypeError, ValueError):
+            logger.warning("Invalid battery_shift value %r; defaulting to 0", motors_cfg.get("battery_shift"))
+            self.battery_shift = 0
+
+        try:
+            self.battery_bits = int(motors_cfg.get("battery_bits", 16))
+        except (TypeError, ValueError):
+            logger.warning("Invalid battery_bits value %r; defaulting to 16", motors_cfg.get("battery_bits"))
+            self.battery_bits = 16
+
+        signed_cfg = motors_cfg.get("battery_signed", False)
+        if isinstance(signed_cfg, str):
+            self.battery_signed = signed_cfg.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            self.battery_signed = bool(signed_cfg)
+
+        mask_cfg = motors_cfg.get("battery_mask")
+        self.battery_mask = None
+        if mask_cfg not in (None, ""):
+            try:
+                self.battery_mask = int(mask_cfg, 0) if isinstance(mask_cfg, str) else int(mask_cfg)
+            except (TypeError, ValueError):
+                logger.warning("Invalid battery_mask value %r; ignoring", mask_cfg)
+                self.battery_mask = None
+
+        self._battery_debug = {}
         self._initialize_hardware()
 
     def _initialize_hardware(self):
@@ -82,6 +114,91 @@ class HardwareManager:
         except Exception:
             logger.exception("Emergency stop failed")
 
+    def _evaluate_battery_candidates(self, raw_native: int, raw_swapped: int):
+        bits = max(1, min(32, int(self.battery_bits or 16)))
+        clamp_mask = (1 << bits) - 1
+
+        raw_options = [
+            {"order": "native", "raw": raw_native},
+            {"order": "swapped", "raw": raw_swapped},
+        ]
+
+        candidates = []
+        for option in raw_options:
+            processed = option["raw"]
+            if self.battery_mask is not None:
+                processed &= self.battery_mask
+            processed &= clamp_mask
+
+            if self.battery_shift > 0:
+                processed >>= self.battery_shift
+            elif self.battery_shift < 0:
+                processed <<= -self.battery_shift
+
+            processed &= clamp_mask
+
+            if self.battery_signed:
+                sign_bit = 1 << (bits - 1)
+                if processed & sign_bit:
+                    processed -= (1 << bits)
+
+            scaled = processed * self.battery_scale
+            voltage = scaled + self.battery_offset
+
+            candidates.append(
+                {
+                    "order": option["order"],
+                    "raw": option["raw"],
+                    "processed": processed,
+                    "scaled": scaled,
+                    "voltage": voltage,
+                }
+            )
+
+        return candidates
+
+    def _select_battery_candidate(self, candidates):
+        if not candidates:
+            return {
+                "order": "native",
+                "raw": 0,
+                "processed": 0,
+                "scaled": 0.0,
+                "voltage": 0.0,
+            }
+
+        order_cfg = (self.battery_word_order or "native").lower()
+        if order_cfg in {"native", "little", "lsb", "lsb_msb"}:
+            desired = "native"
+            for candidate in candidates:
+                if candidate["order"] == desired:
+                    return candidate
+            return candidates[0]
+
+        if order_cfg in {"swapped", "swap", "big", "msb", "msb_lsb"}:
+            desired = "swapped"
+            for candidate in candidates:
+                if candidate["order"] == desired:
+                    return candidate
+            return candidates[-1]
+
+        # Auto-detect: choose the candidate with the most reasonable voltage
+        expected_min = self.battery_empty_voltage - 2.0
+        expected_max = self.battery_full_voltage + 5.0
+        expected_mid = (self.battery_full_voltage + self.battery_empty_voltage) / 2.0
+
+        def score(candidate):
+            voltage = candidate.get("voltage")
+            if voltage is None or (isinstance(voltage, float) and voltage != voltage):
+                return float("inf")
+            if expected_min <= voltage <= expected_max:
+                return abs(voltage - expected_mid)
+            if voltage < expected_min:
+                return (expected_min - voltage) + 10.0
+            return (voltage - expected_max) + 10.0
+
+        return min(candidates, key=score)
+
     # ------------------------------------------------------------------
     # Battery monitoring helpers
     # ------------------------------------------------------------------
@@ -95,30 +212,87 @@ class HardwareManager:
             return self._battery_voltage
 
         try:
-            raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
-            # SMBus returns the low byte in the lower 8 bits already, so we
-            # should not byte swap here. Swapping the bytes inflated the
-            # reading (e.g. 12.5 V became ~500 V). Keep the native ordering
-            # and apply the configured scale/offset so the UI shows the real
-            # battery voltage.
-            voltage = raw * self.battery_scale + self.battery_offset
+            raw_native = self.bus.read_word_data(self.i2c_address, self.battery_register)
+            low = raw_native & 0xFF
+            high = (raw_native >> 8) & 0xFF
+            raw_swapped = (low << 8) | high
+
+            candidates = self._evaluate_battery_candidates(raw_native, raw_swapped)
+            applied = self._select_battery_candidate(candidates)
+
+            processed_counts = applied["processed"]
+            scaled = applied["scaled"]
+            voltage = applied["voltage"]
+
+            # Remember the raw response so callers (and the web UI) can inspect it.
+            self._battery_raw = raw_native
+            self._battery_bytes = (low, high)
+
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
+
+            self._battery_debug = {
+                "word_native": raw_native,
+                "word_swapped": raw_swapped,
+                "applied_order": applied["order"],
+                "configured_order": self.battery_word_order,
+                "processed": processed_counts,
+                "scaled": applied["scaled"],
+                "voltage": applied["voltage"],
+                "candidates": candidates,
+                "scale": self.battery_scale,
+                "offset": self.battery_offset,
+                "shift": self.battery_shift,
+                "mask": self.battery_mask,
+                "bits": self.battery_bits,
+                "signed": self.battery_signed,
+            }
+
+            log_mask = (1 << max(1, min(32, self.battery_bits or 16))) - 1
+            logger.info(
+                "Motor controller battery read: native=0x%04X swapped=0x%04X order=%s "
+                "processed=0x%X (%d) scale=%.6f offset=%.3f -> %.3f V",
+                raw_native,
+                raw_swapped,
+                applied["order"],
+                processed_counts & log_mask,
+                processed_counts,
+                self.battery_scale,
+                self.battery_offset,
+                self._battery_voltage,
+            )
         except Exception:
             logger.exception("Failed reading battery voltage")
             self._battery_voltage = None
+            self._battery_raw = None
+            self._battery_bytes = (None, None)
+            self._battery_debug = {}
 
         return self._battery_voltage
 
     def get_battery_status(self):
         voltage = self._read_battery_voltage()
         if voltage is None:
-            return {"voltage": None, "percent": None}
+            return {
+                "voltage": None,
+                "percent": None,
+                "raw": None,
+                "raw_low_byte": None,
+                "raw_high_byte": None,
+                "debug": {},
+            }
 
         span = max(0.1, self.battery_full_voltage - self.battery_empty_voltage)
         percent = (voltage - self.battery_empty_voltage) * 100.0 / span
         percent = self._clamp(percent, 0.0, 100.0)
-        return {"voltage": round(voltage, 2), "percent": round(percent, 1)}
+        return {
+            "voltage": round(voltage, 2),
+            "percent": round(percent, 1),
+            "raw": self._battery_raw,
+            "raw_low_byte": self._battery_bytes[0],
+            "raw_high_byte": self._battery_bytes[1],
+            "debug": self._battery_debug,
+        }
 
     def get_status(self):
         try:

@@ -65,11 +65,17 @@
 
         #battery-widget {
             display: flex;
-            align-items: center;
-            gap: 8px;
+            align-items: flex-start;
+            gap: 12px;
             background: rgba(255,255,255,0.08);
             padding: 6px 12px;
             border-radius: 10px;
+        }
+
+        #battery-primary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         #battery-widget strong {
@@ -101,6 +107,20 @@
             min-width: 70px;
             font-size: 12px;
             text-align: right;
+        }
+
+        #battery-meta {
+            display: flex;
+            flex-direction: column;
+            font-size: 10px;
+            line-height: 1.3;
+            font-family: "Roboto Mono", "Courier New", monospace;
+            gap: 2px;
+        }
+
+        #battery-meta strong {
+            font-weight: 600;
+            letter-spacing: 0.04em;
         }
         
         #video-container {
@@ -146,13 +166,17 @@
         
         #rear-video {
             position: absolute;
-            top: 80px;
-            right: 20px;
-            width: 240px;
-            height: 180px;
+            top: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            height: 240px;
             border: 2px solid #444;
+            border-radius: 10px;
             background: #222;
             display: none;
+            object-fit: cover;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
         }
         
         .camera-error {
@@ -247,9 +271,19 @@
             <span id="connection-status">Disconnected</span>
         </div>
         <div id="battery-widget">
-            <strong>BATTERY</strong>
-            <div id="battery-bar"><div id="battery-level"></div></div>
-            <div id="battery-readout">--.- V<br><span id="battery-percent">--%</span></div>
+            <div id="battery-primary">
+                <strong>BATTERY</strong>
+                <div id="battery-bar"><div id="battery-level"></div></div>
+                <div id="battery-readout">--.- V<br><span id="battery-percent">--%</span></div>
+            </div>
+            <div id="battery-meta">
+                <div><strong>order:</strong> <span id="battery-order">auto</span></div>
+                <div><strong>native:</strong> <span id="battery-raw-native">0x0000</span></div>
+                <div><strong>swapped:</strong> <span id="battery-raw-swapped">0x0000</span></div>
+                <div><strong>processed:</strong> <span id="battery-processed">0x0000</span></div>
+                <div><strong>bytes:</strong> <span id="battery-bytes">lo=0x00 hi=0x00</span></div>
+                <div><strong>candidates:</strong> <span id="battery-candidates">n/a</span></div>
+            </div>
         </div>
         <div id="header-controls">
             <label for="quality-select" style="font-size: 12px;">Stream:</label>
@@ -303,6 +337,42 @@
     
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
+        function formatWord(value, bits = 16, minDigits) {
+            if (typeof value !== 'number' || Number.isNaN(value)) {
+                return '0x--';
+            }
+            const safeBits = Math.max(1, Math.min(32, bits || 16));
+            const modulus = Math.pow(2, safeBits);
+            const unsigned = ((value % modulus) + modulus) % modulus;
+            const digits = Math.max(minDigits || Math.ceil(safeBits / 4), 1);
+            return `0x${unsigned.toString(16).toUpperCase().padStart(digits, '0')}`;
+        }
+
+        function formatByte(value) {
+            if (typeof value !== 'number' || Number.isNaN(value)) {
+                return '--';
+            }
+            const unsigned = ((value % 256) + 256) % 256;
+            return `0x${unsigned.toString(16).toUpperCase().padStart(2, '0')}`;
+        }
+
+        function describeCandidates(candidates, bits) {
+            if (!Array.isArray(candidates) || !candidates.length) {
+                return 'n/a';
+            }
+            const safeBits = Math.max(1, Math.min(32, bits || 16));
+            return candidates.map(candidate => {
+                const order = candidate && candidate.order ? candidate.order : '?';
+                const processed = candidate && typeof candidate.processed === 'number'
+                    ? formatWord(candidate.processed, safeBits)
+                    : '0x--';
+                const voltage = candidate && typeof candidate.voltage === 'number' && !Number.isNaN(candidate.voltage)
+                    ? `${candidate.voltage.toFixed(2)}V`
+                    : '--';
+                return `${order}:${processed}/${voltage}`;
+            }).join(' · ');
+        }
+
         // WebSocket connection
         const socket = io();
         let camerasActive = false;
@@ -590,6 +660,70 @@
                 readout.firstChild.textContent = voltageText;
             } else {
                 readout.textContent = voltageText;
+            }
+
+            const debug = battery.debug || {};
+            const bits = debug.bits || 16;
+            const orderEl = document.getElementById('battery-order');
+            if (orderEl) {
+                const configured = (debug.configured_order || '').toString();
+                const appliedOrder = debug.applied_order || configured || 'native';
+                if (configured === 'auto' && debug.applied_order) {
+                    orderEl.textContent = `auto→${debug.applied_order}`;
+                } else {
+                    orderEl.textContent = appliedOrder;
+                }
+            }
+
+            const nativeEl = document.getElementById('battery-raw-native');
+            if (nativeEl) {
+                nativeEl.textContent = formatWord(
+                    typeof debug.word_native === 'number' ? debug.word_native : battery.raw,
+                    bits,
+                    4
+                );
+            }
+
+            const swappedEl = document.getElementById('battery-raw-swapped');
+            if (swappedEl) {
+                swappedEl.textContent = typeof debug.word_swapped === 'number'
+                    ? formatWord(debug.word_swapped, bits, 4)
+                    : '0x--';
+            }
+
+            const processedEl = document.getElementById('battery-processed');
+            if (processedEl) {
+                processedEl.textContent = typeof debug.processed === 'number'
+                    ? formatWord(debug.processed, bits, 4)
+                    : '0x--';
+            }
+
+            const bytesEl = document.getElementById('battery-bytes');
+            if (bytesEl) {
+                bytesEl.textContent = `lo=${formatByte(battery.raw_low_byte)} hi=${formatByte(battery.raw_high_byte)}`;
+            }
+
+            const candidatesEl = document.getElementById('battery-candidates');
+            if (candidatesEl) {
+                candidatesEl.textContent = describeCandidates(debug.candidates, bits);
+            }
+
+            const metaEl = document.getElementById('battery-meta');
+            if (metaEl) {
+                const scale = typeof debug.scale === 'number' && !Number.isNaN(debug.scale)
+                    ? debug.scale.toFixed(6)
+                    : 'n/a';
+                const offset = typeof debug.offset === 'number' && !Number.isNaN(debug.offset)
+                    ? debug.offset.toFixed(3)
+                    : 'n/a';
+                const shift = Number.isInteger(debug.shift) ? debug.shift : 0;
+                let maskText = 'n/a';
+                if (typeof debug.mask === 'number' && !Number.isNaN(debug.mask)) {
+                    const maskBits = debug.mask > 0 ? Math.max(bits, Math.ceil(Math.log2(debug.mask + 1))) : bits;
+                    maskText = formatWord(debug.mask, maskBits, Math.max(4, Math.ceil(maskBits / 4)));
+                }
+                const configured = (debug.configured_order || '').toString();
+                metaEl.title = `scale=${scale} offset=${offset} shift=${shift} mask=${maskText} signed=${debug.signed ? 'yes' : 'no'} order=${configured}`;
             }
         }
 

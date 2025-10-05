@@ -27,13 +27,15 @@ class ConfigManager:
             "cameras": {
                 "front": {
                     "type": "picamera2",
-                    "resolution": [1280, 720],
-                    "fps": 30
+                    "resolution": [768, 432],
+                    "fps": 24,
+                    "quality": 78
                 },
                 "rear": {
                     "type": "usb",
-                    "resolution": [640, 480],
-                    "fps": 15
+                    "resolution": [320, 240],
+                    "fps": 20,
+                    "quality": 70
                 }
             },
             "motors": {
@@ -46,6 +48,11 @@ class ConfigManager:
                 "battery_full_voltage": 12.6,
                 "battery_empty_voltage": 9.0,
                 "battery_refresh": 1.5,
+                "battery_word_order": "auto",
+                "battery_shift": 0,
+                "battery_mask": None,
+                "battery_bits": 16,
+                "battery_signed": False,
             },
             "lighting": {
                 "led_bar": {
