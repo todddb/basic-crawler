@@ -23,7 +23,23 @@ class HardwareManager:
         motors_cfg = self.config.get("motors", {})
         battery_register = motors_cfg.get("battery_register", "0x40")
         self.battery_register = int(battery_register, 16) if battery_register is not None else None
+        counts_per_volt = motors_cfg.get("battery_counts_per_volt")
         self.battery_scale = float(motors_cfg.get("battery_scale", 0.01))
+        if counts_per_volt is not None:
+            try:
+                counts_per_volt = float(counts_per_volt)
+                if counts_per_volt > 0:
+                    self.battery_scale = 1.0 / counts_per_volt
+                    logger.info(
+                        "Battery scale derived from counts_per_volt=%s -> %.6f",
+                        counts_per_volt,
+                        self.battery_scale,
+                    )
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Invalid battery_counts_per_volt value %r; falling back to battery_scale", 
+                    counts_per_volt,
+                )
         self.battery_offset = float(motors_cfg.get("battery_offset", 0.0))
         self.battery_full_voltage = float(motors_cfg.get("battery_full_voltage", 12.6))
         self.battery_empty_voltage = float(motors_cfg.get("battery_empty_voltage", 9.0))
@@ -80,8 +96,29 @@ class HardwareManager:
 
         try:
             raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
-            swapped = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF)
-            voltage = swapped * self.battery_scale + self.battery_offset
+            # SMBus returns the low byte in the lower 8 bits already, so we
+            # should not byte swap here. Swapping the bytes inflated the
+            # reading (e.g. 12.5 V became ~500 V). Keep the native ordering
+            # and apply the configured scale/offset so the UI shows the real
+            # battery voltage.
+            voltage = raw * self.battery_scale + self.battery_offset
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "Battery raw=0x%04X (%d) -> %.3f V (scale %.6f, offset %.3f)",
+                    raw,
+                    raw,
+                    voltage,
+                    self.battery_scale,
+                    self.battery_offset,
+                )
+            max_expected = max(self.battery_full_voltage * 2.0, self.battery_full_voltage + 5.0)
+            if voltage < 0 or voltage > max_expected:
+                logger.warning(
+                    "Battery reading %.2f V is outside expected range; check calibration (scale %.6f, offset %.3f)",
+                    voltage,
+                    self.battery_scale,
+                    self.battery_offset,
+                )
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
         except Exception:
