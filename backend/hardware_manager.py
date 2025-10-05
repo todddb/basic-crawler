@@ -1,5 +1,7 @@
 # backend/hardware_manager.py
 import logging
+import time
+
 import psutil
 from smbus2 import SMBus
 
@@ -15,6 +17,17 @@ class HardwareManager:
         self.bus = None
         self.left_speed = 0
         self.right_speed = 0
+        self._battery_voltage = None
+        self._last_battery_read = 0.0
+
+        motors_cfg = self.config.get("motors", {})
+        battery_register = motors_cfg.get("battery_register", "0x40")
+        self.battery_register = int(battery_register, 16) if battery_register is not None else None
+        self.battery_scale = float(motors_cfg.get("battery_scale", 0.01))
+        self.battery_offset = float(motors_cfg.get("battery_offset", 0.0))
+        self.battery_full_voltage = float(motors_cfg.get("battery_full_voltage", 12.6))
+        self.battery_empty_voltage = float(motors_cfg.get("battery_empty_voltage", 9.0))
+        self.battery_refresh = float(motors_cfg.get("battery_refresh", 1.5))
         self._initialize_hardware()
 
     def _initialize_hardware(self):
@@ -53,17 +66,53 @@ class HardwareManager:
         except Exception:
             logger.exception("Emergency stop failed")
 
+    # ------------------------------------------------------------------
+    # Battery monitoring helpers
+    # ------------------------------------------------------------------
+    def _read_battery_voltage(self):
+        """Read battery voltage from the motor controller via I²C."""
+        if self.bus is None or self.battery_register is None:
+            return None
+
+        now = time.time()
+        if self._battery_voltage is not None and (now - self._last_battery_read) < self.battery_refresh:
+            return self._battery_voltage
+
+        try:
+            raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
+            swapped = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF)
+            voltage = swapped * self.battery_scale + self.battery_offset
+            self._battery_voltage = float(voltage)
+            self._last_battery_read = now
+        except Exception:
+            logger.exception("Failed reading battery voltage")
+            self._battery_voltage = None
+
+        return self._battery_voltage
+
+    def get_battery_status(self):
+        voltage = self._read_battery_voltage()
+        if voltage is None:
+            return {"voltage": None, "percent": None}
+
+        span = max(0.1, self.battery_full_voltage - self.battery_empty_voltage)
+        percent = (voltage - self.battery_empty_voltage) * 100.0 / span
+        percent = self._clamp(percent, 0.0, 100.0)
+        return {"voltage": round(voltage, 2), "percent": round(percent, 1)}
+
     def get_status(self):
         try:
             cpu = psutil.cpu_percent(interval=None)
             mem = psutil.virtual_memory().percent
+            battery = self.get_battery_status()
             return {
                 "motors": {"left": self.left_speed, "right": self.right_speed},
                 "system": {"cpu": cpu, "mem": mem},
+                "battery": battery,
             }
         except Exception:
             logger.exception("Status read failed")
-            return {"motors": {"left": 0, "right": 0}, "system": {}}
+            return {"motors": {"left": 0, "right": 0}, "system": {}, "battery": {}}
 
     def cleanup(self):
         try:

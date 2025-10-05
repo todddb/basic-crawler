@@ -10,6 +10,22 @@ import numpy as np
 logger = logging.getLogger("camera_manager")
 
 
+QUALITY_PROFILES = {
+    "low": {
+        "front": {"resolution": (854, 480), "fps": 24, "quality": 70},
+        "rear": {"resolution": (640, 360), "fps": 20, "quality": 65},
+    },
+    "balanced": {
+        "front": {"resolution": (960, 540), "fps": 24, "quality": 80},
+        "rear": {"resolution": (640, 480), "fps": 20, "quality": 75},
+    },
+    "high": {
+        "front": {"resolution": (1280, 720), "fps": 30, "quality": 85},
+        "rear": {"resolution": (800, 600), "fps": 24, "quality": 80},
+    },
+}
+
+
 def _make_blank_jpeg(text: str, size: Tuple[int, int] = (640, 480)) -> bytes:
     """Return a simple black JPEG with centered text; used as a placeholder when no frame is available."""
     w, h = size
@@ -42,6 +58,7 @@ class CameraManager:
         self.rear_res = tuple(r_cfg.get("resolution", (640, 480)))
         self.rear_fps = int(r_cfg.get("fps", 15))
         self.rear_quality = int(r_cfg.get("quality", 75))
+        self.current_profile = self._detect_profile()
 
         # --- Runtime state ---------------------------------------------------
         # Front (Picamera2)
@@ -72,6 +89,100 @@ class CameraManager:
             self._front_last_jpeg = _make_blank_jpeg("Front camera not started", self.front_res)
         if not self._rear_last_jpeg:
             self._rear_last_jpeg = _make_blank_jpeg("Rear camera not started", self.rear_res)
+
+    # ---------------------- Quality profiles ---------------------------------
+
+    def _detect_profile(self) -> str:
+        for name, profile in QUALITY_PROFILES.items():
+            front = profile.get("front", {})
+            rear = profile.get("rear", {})
+            if (tuple(front.get("resolution", ())) == tuple(self.front_res)
+                    and int(front.get("fps", 0)) == int(self.front_fps)
+                    and int(front.get("quality", 0)) == int(self.front_quality)
+                    and tuple(rear.get("resolution", ())) == tuple(self.rear_res)
+                    and int(rear.get("fps", 0)) == int(self.rear_fps)
+                    and int(rear.get("quality", 0)) == int(self.rear_quality)):
+                return name
+        return "custom"
+
+    def apply_quality_profile(self, profile_name: str) -> bool:
+        profile_key = (profile_name or "").lower()
+        profile = QUALITY_PROFILES.get(profile_key)
+        if not profile:
+            logger.warning("Unknown camera quality profile '%s'", profile_name)
+            return False
+
+        front_was_running = self.front_active
+        rear_was_running = self.rear_active
+
+        if front_was_running:
+            self._stop_front_thread()
+        if rear_was_running:
+            self._stop_rear_thread()
+
+        f_cfg = profile.get("front", {})
+        r_cfg = profile.get("rear", {})
+
+        self.front_res = tuple(f_cfg.get("resolution", self.front_res))
+        self.front_fps = int(f_cfg.get("fps", self.front_fps))
+        self.front_quality = int(f_cfg.get("quality", self.front_quality))
+
+        self.rear_res = tuple(r_cfg.get("resolution", self.rear_res))
+        self.rear_fps = int(r_cfg.get("fps", self.rear_fps))
+        self.rear_quality = int(r_cfg.get("quality", self.rear_quality))
+
+        # Persist back into config so the selection survives restarts when saved.
+        cam_cfg = self.config.setdefault("cameras", {})
+        cam_cfg.setdefault("front", {})
+        cam_cfg.setdefault("rear", {})
+        cam_cfg["front"].update({
+            "resolution": list(self.front_res),
+            "fps": self.front_fps,
+            "quality": self.front_quality,
+        })
+        cam_cfg["rear"].update({
+            "resolution": list(self.rear_res),
+            "fps": self.rear_fps,
+            "quality": self.rear_quality,
+        })
+
+        self.current_profile = profile_key
+        logger.info("Applied camera quality profile '%s'", self.current_profile)
+
+        restart_errors = False
+        if front_was_running:
+            try:
+                self._start_front_thread()
+            except Exception:
+                restart_errors = True
+                logger.exception("Failed to restart front camera after quality change")
+        if rear_was_running:
+            try:
+                self._start_rear_thread()
+            except Exception:
+                restart_errors = True
+                logger.exception("Failed to restart rear camera after quality change")
+
+        return not restart_errors
+
+    def get_status(self) -> dict:
+        return {
+            "front": {
+                "active": self.front_active,
+                "supported": self.front_supported,
+                "resolution": list(self.front_res),
+                "fps": self.front_fps,
+                "quality": self.front_quality,
+            },
+            "rear": {
+                "active": self.rear_active,
+                "supported": self.rear_supported,
+                "resolution": list(self.rear_res),
+                "fps": self.rear_fps,
+                "quality": self.rear_quality,
+            },
+            "profile": self.current_profile,
+        }
 
     # ---------------------- Public API ---------------------------------------
 

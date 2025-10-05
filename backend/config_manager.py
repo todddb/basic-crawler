@@ -38,7 +38,13 @@ class ConfigManager:
             },
             "motors": {
                 "i2c_address": "0x34",
-                "max_speed": 100
+                "max_speed": 100,
+                "battery_register": "0x40",
+                "battery_scale": 0.01,
+                "battery_offset": 0.0,
+                "battery_full_voltage": 12.6,
+                "battery_empty_voltage": 9.0,
+                "battery_refresh": 1.5,
             },
             "lighting": {
                 "led_bar": {
