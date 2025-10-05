@@ -80,8 +80,12 @@ class HardwareManager:
 
         try:
             raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
-            swapped = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF)
-            voltage = swapped * self.battery_scale + self.battery_offset
+            # SMBus returns the low byte in the lower 8 bits already, so we
+            # should not byte swap here. Swapping the bytes inflated the
+            # reading (e.g. 12.5 V became ~500 V). Keep the native ordering
+            # and apply the configured scale/offset so the UI shows the real
+            # battery voltage.
+            voltage = raw * self.battery_scale + self.battery_offset
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
         except Exception:
