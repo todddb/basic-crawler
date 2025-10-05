@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Crawler Control</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: #fff;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        #header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: rgba(0,0,0,0.8);
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 100;
+        }
+        
+        .btn {
+            background: #333;
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            margin: 0 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .btn:hover { background: #555; }
+        .btn.active { background: #4CAF50; }
+        .btn.emergency { background: #d32f2f; }
+        
+        #video-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+        }
+        
+        #camera-start-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 50;
+        }
+        
+        #camera-start-overlay button {
+            padding: 20px 40px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        
+        #camera-start-overlay button:hover {
+            background: #5CBF60;
+        }
+        
+        #front-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+        
+        #rear-video {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            border: 2px solid #444;
+            background: #222;
+            display: none;
+        }
+        
+        .camera-error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #f44336;
+            display: none;
+        }
+        
+        .control-slider {
+            position: fixed;
+            width: 60px;
+            height: 250px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-slider.left { left: 20px; bottom: 100px; }
+        .control-slider.right { right: 20px; bottom: 100px; }
+        
+        .slider-track {
+            width: 40px;
+            height: 230px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            position: relative;
+        }
+        
+        .slider-thumb {
+            width: 36px;
+            height: 36px;
+            background: #4CAF50;
+            border-radius: 50%;
+            position: absolute;
+            left: 2px;
+            top: 97px;
+            cursor: pointer;
+            border: 2px solid #fff;
+        }
+        
+        .control-label {
+            position: absolute;
+            bottom: -25px;
+            width: 100%;
+            text-align: center;
+            font-size: 12px;
+        }
+        
+        #status {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 5px 10px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .camera-status {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .status-dot.active { background: #4CAF50; }
+        .status-dot.inactive { background: #f44336; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div>
+            <h2>🤖 Crawler</h2>
+            <span id="connection-status">Disconnected</span>
+        </div>
+        <div>
+		<button id="camera-btn" class="btn" onclick="toggleCamera()">📹 Camera</button>
+		<button class="btn emergency" onclick="emergencyStop()">🛑 STOP</button>
+        </div>
+    </div>
+    
+    <div id="video-container">
+        <div id="camera-start-overlay">
+            <button onclick="startCameras()">📹 Start Cameras</button>
+            <p style="margin-top: 20px; color: #999;">Click to start camera streams</p>
+        </div>
+        
+        <div class="camera-error" id="camera-error">
+            <h3>Camera Error</h3>
+            <p id="error-message"></p>
+            <button class="btn" onclick="retryCameras()">Retry</button>
+        </div>
+        
+        <img id="front-video" alt="Front Camera">
+        <img id="rear-video" alt="Rear Camera">
+        
+        <div class="camera-status" id="camera-status" style="display: none;">
+            <div><span class="status-dot" id="front-status"></span>Front Camera</div>
+            <div><span class="status-dot" id="rear-status"></span>Rear Camera</div>
+        </div>
+    </div>
+    
+    <div class="control-slider left">
+        <div class="slider-track">
+            <div class="slider-thumb" id="left-thumb"></div>
+        </div>
+        <div class="control-label">LEFT</div>
+    </div>
+    
+    <div class="control-slider right">
+        <div class="slider-track">
+            <div class="slider-thumb" id="right-thumb"></div>
+        </div>
+        <div class="control-label">RIGHT</div>
+    </div>
+    
+    <div id="status">Speed: L=0% R=0%</div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // WebSocket connection
+        const socket = io();
+        let camerasActive = false;
+        let frontCameraActive = false;
+        let rearCameraActive = false;
+        
+        socket.on('connect', () => {
+            document.getElementById('connection-status').textContent = 'Connected';
+            document.getElementById('connection-status').style.color = '#4CAF50';
+        });
+        
+        socket.on('disconnect', () => {
+            document.getElementById('connection-status').textContent = 'Disconnected';
+            document.getElementById('connection-status').style.color = '#f44336';
+        });
+        
+        // Camera management
+        function startCameras() {
+            console.log('Starting cameras...');
+            document.getElementById('camera-start-overlay').style.display = 'none';
+            document.getElementById('camera-error').style.display = 'none';
+            
+            // Start front camera
+            const frontVideo = document.getElementById('front-video');
+            frontVideo.onerror = function() {
+                console.error('Front camera failed to load');
+                document.getElementById('front-status').className = 'status-dot inactive';
+                frontCameraActive = false;
+                checkCameraStatus();
+            };
+            
+            frontVideo.onload = function() {
+                console.log('Front camera loaded');
+                frontVideo.style.display = 'block';
+                document.getElementById('front-status').className = 'status-dot active';
+                frontCameraActive = true;
+                camerasActive = true;
+            };
+            
+            // Add timestamp to force reload
+            frontVideo.src = '/video_feed/front?' + Date.now();
+            
+            // Start rear camera with delay
+            setTimeout(() => {
+                const rearVideo = document.getElementById('rear-video');
+                rearVideo.onerror = function() {
+                    console.error('Rear camera failed to load');
+                    document.getElementById('rear-status').className = 'status-dot inactive';
+                    rearCameraActive = false;
+                };
+                
+                rearVideo.onload = function() {
+                    console.log('Rear camera loaded');
+                    rearVideo.style.display = 'block';
+                    document.getElementById('rear-status').className = 'status-dot active';
+                    rearCameraActive = true;
+                };
+                
+                rearVideo.src = '/video_feed/rear?' + Date.now();
+            }, 500);
+            
+            // Show camera status panel
+            document.getElementById('camera-status').style.display = 'block';
+            document.getElementById('camera-btn').classList.add('active');
+            
+            // Check status after 3 seconds
+            setTimeout(checkCameraStatus, 3000);
+        }
+        
+        function stopCameras() {
+            console.log('Stopping cameras...');
+            document.getElementById('front-video').src = '';
+            document.getElementById('front-video').style.display = 'none';
+            document.getElementById('rear-video').src = '';
+            document.getElementById('rear-video').style.display = 'none';
+            document.getElementById('camera-status').style.display = 'none';
+            document.getElementById('camera-btn').classList.remove('active');
+            document.getElementById('camera-start-overlay').style.display = 'block';
+            
+            camerasActive = false;
+            frontCameraActive = false;
+            rearCameraActive = false;
+        }
+        
+        function toggleCamera() {
+            if (camerasActive) {
+                stopCameras();
+            } else {
+                startCameras();
+            }
+        }
+        
+        function retryCameras() {
+            document.getElementById('camera-error').style.display = 'none';
+            startCameras();
+        }
+        
+        function checkCameraStatus() {
+            if (!frontCameraActive && !rearCameraActive) {
+                document.getElementById('camera-error').style.display = 'block';
+                document.getElementById('error-message').textContent = 
+                    'No cameras detected. Check camera connections.';
+            } else if (!frontCameraActive) {
+                console.warn('Front camera not available, using rear only');
+            } else if (!rearCameraActive) {
+                console.warn('Rear camera not available, using front only');
+            }
+        }
+        
+        // Motor control
+        class MotorSlider {
+            constructor(element, side) {
+                this.thumb = element;
+                this.side = side;
+                this.value = 0;
+                this.dragging = false;
+                
+                this.thumb.addEventListener('mousedown', (e) => this.startDrag(e));
+                this.thumb.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
+                document.addEventListener('mousemove', (e) => this.drag(e));
+                document.addEventListener('touchmove', (e) => this.drag(e.touches[0]));
+                document.addEventListener('mouseup', () => this.endDrag());
+                document.addEventListener('touchend', () => this.endDrag());
+            }
+            
+            startDrag(e) {
+                this.dragging = true;
+                this.drag(e);
+            }
+            
+            drag(e) {
+                if (!this.dragging) return;
+                
+                const rect = this.thumb.parentElement.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const pos = Math.max(0, Math.min(194, y - 18));
+                
+                this.thumb.style.top = pos + 'px';
+                
+                // Calculate motor value (-100 to 100)
+                this.value = Math.round((97 - pos) * 100 / 97);
+                this.value = Math.max(-100, Math.min(100, this.value));
+                
+                // Apply deadzone
+                if (Math.abs(this.value) < 10) this.value = 0;
+                
+                this.sendMotorCommand();
+            }
+            
+            endDrag() {
+                if (!this.dragging) return;
+                this.dragging = false;
+                
+                // Return to center
+                this.thumb.style.transition = 'top 0.3s';
+                this.thumb.style.top = '97px';
+                this.value = 0;
+                
+                setTimeout(() => {
+                    this.thumb.style.transition = '';
+                    this.sendMotorCommand();
+                }, 300);
+            }
+            
+            sendMotorCommand() {
+                const left = leftSlider.value;
+                const right = rightSlider.value;
+                
+                socket.emit('motor_control', { left, right });
+                document.getElementById('status').textContent = 
+                    `Speed: L=${left}% R=${right}%`;
+            }
+        }
+        
+        const leftSlider = new MotorSlider(document.getElementById('left-thumb'), 'left');
+        const rightSlider = new MotorSlider(document.getElementById('right-thumb'), 'right');
+        
+        function emergencyStop() {
+            socket.emit('emergency_stop');
+            leftSlider.value = 0;
+            rightSlider.value = 0;
+            leftSlider.thumb.style.top = '97px';
+            rightSlider.thumb.style.top = '97px';
+            document.getElementById('status').textContent = 'STOPPED';
+        }
+    </script>
+</body>
+</html>

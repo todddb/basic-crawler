@@ -1,0 +1,29 @@
+{
+  "system": {
+    "log_level": "INFO"
+  },
+  "cameras": {
+    "front": {
+      "type": "picamera2",
+      "resolution": [1280, 720],
+      "fps": 30
+    },
+    "rear": {
+      "type": "usb",
+      "resolution": [640, 480],
+      "fps": 15
+    }
+  },
+  "motors": {
+    "i2c_address": "0x34",
+    "max_speed": 100,
+    "left_channel": 0,
+    "right_channel": 1
+  },
+  "lighting": {
+    "led_bar": {
+      "pin": 12,
+      "default_state": false
+    }
+  }
+}
