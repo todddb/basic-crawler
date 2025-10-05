@@ -347,6 +347,9 @@ class CameraManager:
                 # Picamera2 returns frames that are already in BGR order for JPEG encoding.
                 # Avoid swapping channels so the streamed colours remain natural.
                 frame_bgr = np.ascontiguousarray(frame_rgb)
+
+                # Flip horizontally so the feed mirrors the actual orientation
+                frame_bgr = cv2.flip(frame_bgr, 1)
                 ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
                 if ok:
                     with self._front_lock:
