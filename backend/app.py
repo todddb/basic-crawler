@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 import signal
+import subprocess
 import time
 from flask import Flask, render_template, Response, jsonify, request
 from flask_socketio import SocketIO, emit
@@ -58,6 +59,33 @@ def api_status():
         "hardware": hardware_manager.get_status() if hardware_manager else {},
         "cameras": camera_manager.get_status() if camera_manager else {}
     })
+
+
+@app.route("/api/camera/quality", methods=["POST"])
+def api_camera_quality():
+    if not camera_manager:
+        return jsonify({"success": False, "error": "Camera manager unavailable"}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    profile = data.get("profile", "balanced")
+    applied = camera_manager.apply_quality_profile(profile)
+    status_code = 200 if applied else 400
+    return jsonify({"success": applied, "profile": profile}), status_code
+
+
+@app.route("/api/shutdown", methods=["POST"])
+def api_shutdown():
+    if not hardware_manager:
+        return jsonify({"success": False, "error": "Hardware manager unavailable"}), 503
+
+    logger.warning("Shutdown requested via API")
+    try:
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as exc:
+        logger.exception("Failed to invoke shutdown")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+    return jsonify({"success": True})
 
 
 @app.route("/video_feed/<camera>")
