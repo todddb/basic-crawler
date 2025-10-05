@@ -12,16 +12,16 @@ logger = logging.getLogger("camera_manager")
 
 QUALITY_PROFILES = {
     "low": {
-        "front": {"resolution": (854, 480), "fps": 24, "quality": 70},
-        "rear": {"resolution": (640, 360), "fps": 20, "quality": 65},
+        "front": {"resolution": (640, 360), "fps": 24, "quality": 68},
+        "rear": {"resolution": (320, 180), "fps": 18, "quality": 60},
     },
     "balanced": {
-        "front": {"resolution": (960, 540), "fps": 24, "quality": 80},
-        "rear": {"resolution": (640, 480), "fps": 20, "quality": 75},
+        "front": {"resolution": (768, 432), "fps": 24, "quality": 78},
+        "rear": {"resolution": (320, 240), "fps": 20, "quality": 70},
     },
     "high": {
-        "front": {"resolution": (1280, 720), "fps": 30, "quality": 85},
-        "rear": {"resolution": (800, 600), "fps": 24, "quality": 80},
+        "front": {"resolution": (960, 540), "fps": 30, "quality": 85},
+        "rear": {"resolution": (480, 360), "fps": 24, "quality": 78},
     },
 }
 

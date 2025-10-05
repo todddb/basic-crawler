@@ -18,6 +18,8 @@ class HardwareManager:
         self.left_speed = 0
         self.right_speed = 0
         self._battery_voltage = None
+        self._battery_raw = None
+        self._battery_bytes = (None, None)
         self._last_battery_read = 0.0
 
         motors_cfg = self.config.get("motors", {})
@@ -96,29 +98,62 @@ class HardwareManager:
 
         try:
             raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
+            low = raw & 0xFF
+            high = (raw >> 8) & 0xFF
+            scaled = raw * self.battery_scale
+
+            # Remember the raw response so callers (and the web UI) can inspect it.
+            self._battery_raw = raw
+            self._battery_bytes = (low, high)
+
             # SMBus returns the low byte in the lower 8 bits already, so we
             # should not byte swap here. Swapping the bytes inflated the
             # reading (e.g. 12.5 V became ~500 V). Keep the native ordering
             # and apply the configured scale/offset so the UI shows the real
             # battery voltage.
-            voltage = raw * self.battery_scale + self.battery_offset
+            voltage = scaled + self.battery_offset
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
+
+            logger.info(
+                "Motor controller battery read: raw=0x%04X (low=0x%02X high=0x%02X) "
+                "scaled=%.5f offset=%.3f -> %.3f V",
+                raw,
+                low,
+                high,
+                scaled,
+                self.battery_offset,
+                self._battery_voltage,
+            )
         except Exception:
             logger.exception("Failed reading battery voltage")
             self._battery_voltage = None
+            self._battery_raw = None
+            self._battery_bytes = (None, None)
 
         return self._battery_voltage
 
     def get_battery_status(self):
         voltage = self._read_battery_voltage()
         if voltage is None:
-            return {"voltage": None, "percent": None}
+            return {
+                "voltage": None,
+                "percent": None,
+                "raw": None,
+                "raw_low_byte": None,
+                "raw_high_byte": None,
+            }
 
         span = max(0.1, self.battery_full_voltage - self.battery_empty_voltage)
         percent = (voltage - self.battery_empty_voltage) * 100.0 / span
         percent = self._clamp(percent, 0.0, 100.0)
-        return {"voltage": round(voltage, 2), "percent": round(percent, 1)}
+        return {
+            "voltage": round(voltage, 2),
+            "percent": round(percent, 1),
+            "raw": self._battery_raw,
+            "raw_low_byte": self._battery_bytes[0],
+            "raw_high_byte": self._battery_bytes[1],
+        }
 
     def get_status(self):
         try:
