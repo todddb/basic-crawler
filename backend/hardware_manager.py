@@ -23,7 +23,23 @@ class HardwareManager:
         motors_cfg = self.config.get("motors", {})
         battery_register = motors_cfg.get("battery_register", "0x40")
         self.battery_register = int(battery_register, 16) if battery_register is not None else None
+        counts_per_volt = motors_cfg.get("battery_counts_per_volt")
         self.battery_scale = float(motors_cfg.get("battery_scale", 0.01))
+        if counts_per_volt is not None:
+            try:
+                counts_per_volt = float(counts_per_volt)
+                if counts_per_volt > 0:
+                    self.battery_scale = 1.0 / counts_per_volt
+                    logger.info(
+                        "Battery scale derived from counts_per_volt=%s -> %.6f",
+                        counts_per_volt,
+                        self.battery_scale,
+                    )
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Invalid battery_counts_per_volt value %r; falling back to battery_scale", 
+                    counts_per_volt,
+                )
         self.battery_offset = float(motors_cfg.get("battery_offset", 0.0))
         self.battery_full_voltage = float(motors_cfg.get("battery_full_voltage", 12.6))
         self.battery_empty_voltage = float(motors_cfg.get("battery_empty_voltage", 9.0))
