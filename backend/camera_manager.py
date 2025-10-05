@@ -338,14 +338,15 @@ class CameraManager:
 
             while not self._front_stop.is_set():
                 t0 = time.time()
-                frame_rgb = self._picam2.capture_array()  # RGB
+                frame_rgb = self._picam2.capture_array()
                 # Robustness: sometimes None may occur if pipeline hiccups
                 if frame_rgb is None or not isinstance(frame_rgb, np.ndarray):
                     time.sleep(0.01)
                     continue
 
-                # Convert to BGR for imencode
-                frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                # Picamera2 returns frames that are already in BGR order for JPEG encoding.
+                # Avoid swapping channels so the streamed colours remain natural.
+                frame_bgr = np.ascontiguousarray(frame_rgb)
                 ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
                 if ok:
                     with self._front_lock:
