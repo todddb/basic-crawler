@@ -102,23 +102,6 @@ class HardwareManager:
             # and apply the configured scale/offset so the UI shows the real
             # battery voltage.
             voltage = raw * self.battery_scale + self.battery_offset
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "Battery raw=0x%04X (%d) -> %.3f V (scale %.6f, offset %.3f)",
-                    raw,
-                    raw,
-                    voltage,
-                    self.battery_scale,
-                    self.battery_offset,
-                )
-            max_expected = max(self.battery_full_voltage * 2.0, self.battery_full_voltage + 5.0)
-            if voltage < 0 or voltage > max_expected:
-                logger.warning(
-                    "Battery reading %.2f V is outside expected range; check calibration (scale %.6f, offset %.3f)",
-                    voltage,
-                    self.battery_scale,
-                    self.battery_offset,
-                )
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
         except Exception:
