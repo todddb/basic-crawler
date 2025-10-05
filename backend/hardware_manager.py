@@ -212,52 +212,31 @@ class HardwareManager:
             return self._battery_voltage
 
         try:
-            raw_native = self.bus.read_word_data(self.i2c_address, self.battery_register)
-            low = raw_native & 0xFF
-            high = (raw_native >> 8) & 0xFF
-            raw_swapped = (low << 8) | high
-
-            candidates = self._evaluate_battery_candidates(raw_native, raw_swapped)
-            applied = self._select_battery_candidate(candidates)
-
-            processed_counts = applied["processed"]
-            scaled = applied["scaled"]
-            voltage = applied["voltage"]
+            raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
+            low = raw & 0xFF
+            high = (raw >> 8) & 0xFF
+            scaled = raw * self.battery_scale
 
             # Remember the raw response so callers (and the web UI) can inspect it.
-            self._battery_raw = raw_native
+            self._battery_raw = raw
             self._battery_bytes = (low, high)
 
+            # SMBus returns the low byte in the lower 8 bits already, so we
+            # should not byte swap here. Swapping the bytes inflated the
+            # reading (e.g. 12.5 V became ~500 V). Keep the native ordering
+            # and apply the configured scale/offset so the UI shows the real
+            # battery voltage.
+            voltage = scaled + self.battery_offset
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
 
-            self._battery_debug = {
-                "word_native": raw_native,
-                "word_swapped": raw_swapped,
-                "applied_order": applied["order"],
-                "configured_order": self.battery_word_order,
-                "processed": processed_counts,
-                "scaled": applied["scaled"],
-                "voltage": applied["voltage"],
-                "candidates": candidates,
-                "scale": self.battery_scale,
-                "offset": self.battery_offset,
-                "shift": self.battery_shift,
-                "mask": self.battery_mask,
-                "bits": self.battery_bits,
-                "signed": self.battery_signed,
-            }
-
-            log_mask = (1 << max(1, min(32, self.battery_bits or 16))) - 1
             logger.info(
-                "Motor controller battery read: native=0x%04X swapped=0x%04X order=%s "
-                "processed=0x%X (%d) scale=%.6f offset=%.3f -> %.3f V",
-                raw_native,
-                raw_swapped,
-                applied["order"],
-                processed_counts & log_mask,
-                processed_counts,
-                self.battery_scale,
+                "Motor controller battery read: raw=0x%04X (low=0x%02X high=0x%02X) "
+                "scaled=%.5f offset=%.3f -> %.3f V",
+                raw,
+                low,
+                high,
+                scaled,
                 self.battery_offset,
                 self._battery_voltage,
             )
@@ -266,7 +245,6 @@ class HardwareManager:
             self._battery_voltage = None
             self._battery_raw = None
             self._battery_bytes = (None, None)
-            self._battery_debug = {}
 
         return self._battery_voltage
 
@@ -279,7 +257,6 @@ class HardwareManager:
                 "raw": None,
                 "raw_low_byte": None,
                 "raw_high_byte": None,
-                "debug": {},
             }
 
         span = max(0.1, self.battery_full_voltage - self.battery_empty_voltage)
@@ -291,7 +268,6 @@ class HardwareManager:
             "raw": self._battery_raw,
             "raw_low_byte": self._battery_bytes[0],
             "raw_high_byte": self._battery_bytes[1],
-            "debug": self._battery_debug,
         }
 
     def get_status(self):
