@@ -37,8 +37,8 @@ def _make_blank_jpeg(text: str, size: Tuple[int, int] = (640, 480)) -> bytes:
 
 class CameraManager:
     """
-    Front: Picamera2 (if available)
-    Rear : USB camera via OpenCV (auto-detected /dev/videoN)
+    Front: Picamera2 (if available/configured)
+    Rear : Picamera2 or USB camera via OpenCV (auto-detected /dev/videoN)
     """
 
     def __init__(self, config: dict):
@@ -48,6 +48,31 @@ class CameraManager:
         cam_cfg = (self.config.get("cameras") or {})
         f_cfg = cam_cfg.get("front", {}) or {}
         r_cfg = cam_cfg.get("rear", {}) or {}
+
+        self.front_type = (f_cfg.get("type") or "picamera2").lower()
+        self.rear_type = (r_cfg.get("type") or "usb").lower()
+
+        def _resolve_camera_id(label: str, cfg: dict, default: Optional[int]) -> Optional[int]:
+            for key in ("camera_id", "sensor_id"):
+                if key in cfg and cfg[key] is not None:
+                    try:
+                        return int(cfg[key])
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "%s camera configuration has invalid %s=%r; falling back to %r.",
+                            label,
+                            key,
+                            cfg[key],
+                            default,
+                        )
+            return default
+
+        self.front_camera_id = _resolve_camera_id(
+            "front", f_cfg, 0 if self.front_type == "picamera2" else None
+        )
+        self.rear_camera_id = _resolve_camera_id(
+            "rear", r_cfg, 1 if self.rear_type == "picamera2" else None
+        )
 
         # Front (PiCam) desired settings
         self.front_res = tuple(f_cfg.get("resolution", (1280, 720)))
@@ -61,7 +86,7 @@ class CameraManager:
         self.current_profile = self._detect_profile()
 
         # --- Runtime state ---------------------------------------------------
-        # Front (Picamera2)
+        # Front camera runtime state
         self.front_supported = False
         self.front_active = False
         self._front_thread: Optional[threading.Thread] = None
@@ -70,7 +95,7 @@ class CameraManager:
         self._front_last_jpeg: Optional[bytes] = None
         self._picam2 = None
 
-        # Rear (USB)
+        # Rear camera runtime state
         self.rear_supported = False
         self.rear_active = False
         self._rear_thread: Optional[threading.Thread] = None
@@ -79,10 +104,11 @@ class CameraManager:
         self._rear_last_jpeg: Optional[bytes] = None
         self._rear_cap: Optional[cv2.VideoCapture] = None
         self._rear_index: Optional[int] = None
+        self._rear_picam2 = None
 
         # Probes
-        self.front_supported = self._probe_front_picamera2()
-        self.rear_supported = self._probe_rear_usb()
+        self.front_supported = self._probe_front_camera()
+        self.rear_supported = self._probe_rear_camera()
 
         # Placeholders so the UI shows *something* even before frames arrive
         if not self._front_last_jpeg:
@@ -170,6 +196,8 @@ class CameraManager:
             "front": {
                 "active": self.front_active,
                 "supported": self.front_supported,
+                "type": self.front_type,
+                "camera_id": self.front_camera_id,
                 "resolution": list(self.front_res),
                 "fps": self.front_fps,
                 "quality": self.front_quality,
@@ -177,6 +205,8 @@ class CameraManager:
             "rear": {
                 "active": self.rear_active,
                 "supported": self.rear_supported,
+                "type": self.rear_type,
+                "camera_id": self.rear_camera_id,
                 "resolution": list(self.rear_res),
                 "fps": self.rear_fps,
                 "quality": self.rear_quality,
@@ -253,24 +283,70 @@ class CameraManager:
 
     # ---------------------- Probing ------------------------------------------
 
-    def _probe_front_picamera2(self) -> bool:
-        """
-        Try to import Picamera2 and create a minimal instance to confirm support.
-        """
-        try:
-            from picamera2 import Picamera2  # noqa: F401
-        except Exception:
-            logger.info("Picamera2 not available; front camera disabled.")
+    def _probe_front_camera(self) -> bool:
+        if self.front_type == "picamera2":
+            return self._probe_picamera2(self.front_camera_id, "front")
+
+        if self.front_type == "usb":
+            logger.info(
+                "Front camera configured for USB; front USB streaming is not currently implemented."
+            )
             return False
 
-        # Defer full initialization until thread start; import presence is enough
-        logger.info("Picamera2 detected; front camera supported.")
-        return True
+        logger.warning("Unknown front camera type '%s'; disabling front camera.", self.front_type)
+        return False
 
-    def _probe_rear_usb(self) -> bool:
-        """
-        Try to open /dev/videoN devices to find a working USB camera.
-        """
+    def _probe_rear_camera(self) -> bool:
+        if self.rear_type == "picamera2":
+            self._rear_index = None
+            return self._probe_picamera2(self.rear_camera_id, "rear")
+
+        if self.rear_type == "usb":
+            supported, index = self._probe_usb_camera("rear")
+            self._rear_index = index if supported else None
+            return supported
+
+        logger.warning("Unknown rear camera type '%s'; disabling rear camera.", self.rear_type)
+        self._rear_index = None
+        return False
+
+    def _probe_picamera2(self, camera_id: Optional[int], which: str) -> bool:
+        """Instantiate Picamera2 with the requested sensor ID to confirm availability."""
+        try:
+            from picamera2 import Picamera2
+        except Exception:
+            logger.info("Picamera2 not available; %s camera disabled.", which)
+            return False
+
+        cam = None
+        try:
+            kwargs = {}
+            if camera_id is not None:
+                kwargs["camera_num"] = int(camera_id)
+            cam = Picamera2(**kwargs)
+            logger.info(
+                "Picamera2 detected for %s camera (camera_id=%s).",
+                which,
+                camera_id if camera_id is not None else "default",
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Failed to initialize Picamera2 for %s camera (camera_id=%s): %s",
+                which,
+                camera_id,
+                exc,
+            )
+            return False
+        finally:
+            if cam is not None:
+                try:
+                    cam.close()
+                except Exception:
+                    pass
+
+    def _probe_usb_camera(self, which: str) -> Tuple[bool, Optional[int]]:
+        """Try to open /dev/videoN devices to find a working USB camera."""
         for idx in (0, 1, 2, 3):
             cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
             if not cap.isOpened():
@@ -279,19 +355,25 @@ class CameraManager:
             ok, _ = cap.read()
             cap.release()
             if ok:
-                self._rear_index = idx
-                logger.info(f"USB camera will use /dev/video{idx}")
-                return True
+                logger.info("%s camera will use /dev/video%d", which.capitalize(), idx)
+                return True, idx
 
-        logger.info("No USB camera detected on /dev/video[0-3].")
-        return False
+        logger.info("No USB camera detected for %s camera on /dev/video[0-3].", which)
+        return False, None
 
     # ---------------------- Front (Picamera2) thread -------------------------
 
     def _start_front_thread(self):
         if self._front_thread and self._front_thread.is_alive():
             return
-        logger.info("Initializing Picamera2 (front)...")
+        if self.front_type != "picamera2":
+            raise RuntimeError(
+                f"Front camera type '{self.front_type}' is not supported for streaming threads."
+            )
+        logger.info(
+            "Initializing Picamera2 (front, camera_id=%s)...",
+            self.front_camera_id if self.front_camera_id is not None else "default",
+        )
         self._front_stop.clear()
         self._front_thread = threading.Thread(target=self._front_loop, name="front_cam", daemon=True)
         self._front_thread.start()
@@ -322,7 +404,10 @@ class CameraManager:
     def _front_loop(self):
         try:
             from picamera2 import Picamera2
-            self._picam2 = Picamera2()
+            kwargs = {}
+            if self.front_camera_id is not None:
+                kwargs["camera_num"] = int(self.front_camera_id)
+            self._picam2 = Picamera2(**kwargs)
 
             # Configure for streaming video
             # Use RGB888 to avoid color surprises; convert to BGR for OpenCV JPEG encode.
@@ -377,16 +462,28 @@ class CameraManager:
             self._picam2 = None
             self.front_active = False
 
-    # ---------------------- Rear (USB OpenCV) thread -------------------------
+    # ---------------------- Rear camera thread -------------------------------
 
     def _start_rear_thread(self):
         if self._rear_thread and self._rear_thread.is_alive():
             return
-        if self._rear_index is None:
-            raise RuntimeError("No USB camera index available.")
-        logger.info(f"Initializing USB camera (rear) on /dev/video{self._rear_index}...")
+
         self._rear_stop.clear()
-        self._rear_thread = threading.Thread(target=self._rear_loop, name="rear_cam", daemon=True)
+        if self.rear_type == "picamera2":
+            logger.info(
+                "Initializing Picamera2 (rear, camera_id=%s)...",
+                self.rear_camera_id if self.rear_camera_id is not None else "default",
+            )
+            target = self._rear_loop_picamera2
+        elif self.rear_type == "usb":
+            if self._rear_index is None:
+                raise RuntimeError("No USB camera index available.")
+            logger.info(f"Initializing USB camera (rear) on /dev/video{self._rear_index}...")
+            target = self._rear_loop_usb
+        else:
+            raise RuntimeError(f"Unsupported rear camera type '{self.rear_type}'.")
+
+        self._rear_thread = threading.Thread(target=target, name="rear_cam", daemon=True)
         self._rear_thread.start()
         # Wait a moment to confirm frames begin
         time.sleep(0.25)
@@ -398,17 +495,30 @@ class CameraManager:
         self._rear_stop.set()
         self._rear_thread.join(timeout=2.0)
         self._rear_thread = None
-        # Release capture
-        if self._rear_cap is not None:
-            try:
-                self._rear_cap.release()
-            except Exception:
-                pass
-            self._rear_cap = None
+
+        if self.rear_type == "picamera2":
+            if self._rear_picam2 is not None:
+                try:
+                    self._rear_picam2.stop()
+                except Exception:
+                    pass
+                try:
+                    self._rear_picam2.close()
+                except Exception:
+                    pass
+                self._rear_picam2 = None
+        else:
+            if self._rear_cap is not None:
+                try:
+                    self._rear_cap.release()
+                except Exception:
+                    pass
+                self._rear_cap = None
+
         self.rear_active = False
         logger.info("Rear camera stopped.")
 
-    def _rear_loop(self):
+    def _rear_loop_usb(self):
         cap = None
         try:
             cap = cv2.VideoCapture(self._rear_index, cv2.CAP_V4L2)
@@ -446,7 +556,7 @@ class CameraManager:
                     time.sleep(target_delay - elapsed)
 
         except Exception:
-            logger.exception("Rear camera loop crashed")
+            logger.exception("Rear camera USB loop crashed")
         finally:
             try:
                 if cap is not None:
@@ -454,5 +564,57 @@ class CameraManager:
             except Exception:
                 pass
             self._rear_cap = None
+            self.rear_active = False
+
+    def _rear_loop_picamera2(self):
+        try:
+            from picamera2 import Picamera2
+            kwargs = {}
+            if self.rear_camera_id is not None:
+                kwargs["camera_num"] = int(self.rear_camera_id)
+            self._rear_picam2 = Picamera2(**kwargs)
+
+            video_config = self._rear_picam2.create_video_configuration(
+                main={"size": tuple(self.rear_res), "format": "RGB888"},
+                buffer_count=4,
+            )
+            self._rear_picam2.configure(video_config)
+            self._rear_picam2.start()
+
+            target_delay = 1.0 / max(1, self.rear_fps)
+            quality = int(self.rear_quality)
+
+            while not self._rear_stop.is_set():
+                t0 = time.time()
+                frame_rgb = self._rear_picam2.capture_array()
+                if frame_rgb is None or not isinstance(frame_rgb, np.ndarray):
+                    time.sleep(0.01)
+                    continue
+
+                frame_bgr = np.ascontiguousarray(frame_rgb)
+
+                ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+                if ok:
+                    with self._rear_lock:
+                        self._rear_last_jpeg = buf.tobytes()
+
+                elapsed = time.time() - t0
+                if elapsed < target_delay:
+                    time.sleep(target_delay - elapsed)
+
+        except Exception:
+            logger.exception("Rear camera Picamera2 loop crashed")
+        finally:
+            try:
+                if self._rear_picam2 is not None:
+                    self._rear_picam2.stop()
+            except Exception:
+                pass
+            try:
+                if self._rear_picam2 is not None:
+                    self._rear_picam2.close()
+            except Exception:
+                pass
+            self._rear_picam2 = None
             self.rear_active = False
 

@@ -5,11 +5,13 @@
   "cameras": {
     "front": {
       "type": "picamera2",
+      "camera_id": 0,
       "resolution": [1280, 720],
       "fps": 30
     },
     "rear": {
       "type": "usb",
+      "camera_id": 1,
       "resolution": [640, 480],
       "fps": 15
     }
