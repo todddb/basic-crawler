@@ -1,5 +1,6 @@
 # backend/hardware_manager.py
 import logging
+import math
 import time
 
 import psutil
@@ -212,30 +213,100 @@ class HardwareManager:
             return self._battery_voltage
 
         try:
-            raw = self.bus.read_word_data(self.i2c_address, self.battery_register)
-            low = raw & 0xFF
-            high = (raw >> 8) & 0xFF
-            scaled = raw * self.battery_scale
+            raw_word = self.bus.read_word_data(self.i2c_address, self.battery_register)
+            low = raw_word & 0xFF
+            high = (raw_word >> 8) & 0xFF
+            word_native = raw_word & 0xFFFF
+            word_swapped = (low << 8) | high
+
+            candidates = self._evaluate_battery_candidates(word_native, word_swapped)
+            selected_candidate = self._select_battery_candidate(candidates) or {}
+
+            def _safe_int(value):
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+
+            def _safe_float(value):
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    return None
+                if math.isnan(value) or math.isinf(value):
+                    return None
+                return value
+
+            bits = max(1, min(32, int(self.battery_bits or 16)))
+            digits = max(4, math.ceil(bits / 4))
+
+            selected_raw = _safe_int(selected_candidate.get("raw"))
+            if selected_raw is None:
+                selected_raw = word_native
+
+            processed = _safe_int(selected_candidate.get("processed"))
+            if processed is None:
+                processed = selected_raw
+
+            scaled = _safe_float(selected_candidate.get("scaled"))
+            if scaled is None and processed is not None:
+                scaled = processed * self.battery_scale
+            if scaled is None:
+                scaled = word_native * self.battery_scale
+
+            voltage = _safe_float(selected_candidate.get("voltage"))
+            if voltage is None:
+                voltage = scaled + self.battery_offset
+
+            applied_order = selected_candidate.get("order", "native")
 
             # Remember the raw response so callers (and the web UI) can inspect it.
-            self._battery_raw = raw
+            self._battery_raw = selected_raw
             self._battery_bytes = (low, high)
-
-            # SMBus returns the low byte in the lower 8 bits already, so we
-            # should not byte swap here. Swapping the bytes inflated the
-            # reading (e.g. 12.5 V became ~500 V). Keep the native ordering
-            # and apply the configured scale/offset so the UI shows the real
-            # battery voltage.
-            voltage = scaled + self.battery_offset
             self._battery_voltage = float(voltage)
             self._last_battery_read = now
 
+            debug_candidates = []
+            for candidate in candidates:
+                debug_candidates.append(
+                    {
+                        "order": candidate.get("order"),
+                        "raw": _safe_int(candidate.get("raw")),
+                        "processed": _safe_int(candidate.get("processed")),
+                        "scaled": _safe_float(candidate.get("scaled")),
+                        "voltage": _safe_float(candidate.get("voltage")),
+                    }
+                )
+
+            self._battery_debug = {
+                "word_native": word_native,
+                "word_swapped": word_swapped,
+                "raw_selected": selected_raw,
+                "configured_order": self.battery_word_order,
+                "applied_order": applied_order,
+                "processed": processed,
+                "scaled": scaled,
+                "candidates": debug_candidates,
+                "bits": bits,
+                "scale": self.battery_scale,
+                "offset": self.battery_offset,
+                "shift": self.battery_shift,
+                "mask": self.battery_mask,
+                "signed": self.battery_signed,
+            }
+
+            processed_masked = processed if processed is not None else 0
+            mask = (1 << bits) - 1
+            processed_hex = f"0x{processed_masked & mask:0{digits}X}" if processed is not None else "n/a"
             logger.info(
-                "Motor controller battery read: raw=0x%04X (low=0x%02X high=0x%02X) "
+                "Motor controller battery read: native=0x%0*X swapped=0x%0*X order=%s processed=%s "
                 "scaled=%.5f offset=%.3f -> %.3f V",
-                raw,
-                low,
-                high,
+                digits,
+                word_native,
+                digits,
+                word_swapped,
+                applied_order,
+                processed_hex,
                 scaled,
                 self.battery_offset,
                 self._battery_voltage,
@@ -245,6 +316,7 @@ class HardwareManager:
             self._battery_voltage = None
             self._battery_raw = None
             self._battery_bytes = (None, None)
+            self._battery_debug = {}
 
         return self._battery_voltage
 
@@ -262,12 +334,14 @@ class HardwareManager:
         span = max(0.1, self.battery_full_voltage - self.battery_empty_voltage)
         percent = (voltage - self.battery_empty_voltage) * 100.0 / span
         percent = self._clamp(percent, 0.0, 100.0)
+        debug_info = dict(self._battery_debug) if isinstance(self._battery_debug, dict) else {}
         return {
             "voltage": round(voltage, 2),
             "percent": round(percent, 1),
             "raw": self._battery_raw,
             "raw_low_byte": self._battery_bytes[0],
             "raw_high_byte": self._battery_bytes[1],
+            "debug": debug_info,
         }
 
     def get_status(self):

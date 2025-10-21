@@ -191,7 +191,7 @@
         .control-slider {
             position: fixed;
             width: 60px;
-            height: 320px;
+            height: 400px;
             background: rgba(255,255,255,0.1);
             border-radius: 30px;
             display: flex;
@@ -204,7 +204,7 @@
 
         .slider-track {
             width: 40px;
-            height: 300px;
+            height: 375px;
             background: rgba(255,255,255,0.2);
             border-radius: 20px;
             position: relative;
@@ -380,6 +380,8 @@
         let motorSendScheduled = false;
         let lastMotorSend = 0;
         const MOTOR_COMMAND_INTERVAL = 60; // ms
+        const SPEED_CURVE_EXPONENT = 2.4;
+        const SPEED_DEAD_ZONE = 8;
 
         socket.on('connect', () => {
             document.getElementById('connection-status').textContent = 'Connected';
@@ -531,14 +533,17 @@
             updateValueFromEvent(e) {
                 const rect = this.track.getBoundingClientRect();
                 const thumbHeight = this.thumb.offsetHeight;
-                const range = rect.height - thumbHeight;
+                const range = Math.max(1, rect.height - thumbHeight);
                 const y = e.clientY - rect.top - thumbHeight / 2;
                 const clamped = Math.max(0, Math.min(range, y));
                 this.thumb.style.top = `${clamped}px`;
 
                 const normalized = 1 - (clamped / range);
-                let value = Math.round(normalized * 200 - 100);
-                if (Math.abs(value) < 8) {
+                const symmetric = normalized * 2 - 1;
+                const magnitude = Math.pow(Math.abs(symmetric), SPEED_CURVE_EXPONENT);
+                const curved = symmetric >= 0 ? magnitude : -magnitude;
+                let value = Math.round(curved * 100);
+                if (Math.abs(value) < SPEED_DEAD_ZONE) {
                     value = 0;
                 }
                 this.value = Math.max(-100, Math.min(100, value));
