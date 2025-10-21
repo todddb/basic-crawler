@@ -326,10 +326,20 @@ class CameraManager:
         """Instantiate Picamera2 with the requested sensor ID to confirm availability."""
         try:
             from picamera2 import Picamera2
-        except Exception:
+        except ModuleNotFoundError as exc:
             logger.info(
-                "Picamera2 not available; attempting libcamerasrc fallback for %s camera.",
+                "Picamera2 not available for %s camera (%s); install with 'sudo apt install "
+                "python3-picamera2' to enable native support. Falling back to libcamerasrc.",
                 which,
+                exc,
+            )
+            return self._probe_libcamera_gstreamer(which, camera_id)
+        except Exception as exc:
+            logger.warning(
+                "Picamera2 import failed for %s camera (camera_id=%s): %s. Attempting libcamerasrc fallback.",
+                which,
+                camera_id,
+                exc,
             )
             return self._probe_libcamera_gstreamer(which, camera_id)
 
@@ -425,7 +435,16 @@ class CameraManager:
         # libcamerasrc currently selects the first camera when no name is provided.
         # Passing camera-name is fragile across OS versions, so we rely on default
         # ordering for the fallback to maximise compatibility.
+        src_props = []
+        if camera_id is not None:
+            try:
+                src_props.append(f"camera-id={int(camera_id)}")
+            except (TypeError, ValueError):
+                logger.debug("Invalid camera_id %r for %s camera; ignoring.", camera_id, which)
+
         src = "libcamerasrc"
+        if src_props:
+            src = f"{src} {' '.join(src_props)}"
         caps = f"video/x-raw,width={int(width)},height={int(height)},framerate={fps}/1"
         pipeline = (
             f"{src} ! {caps} ! videoconvert ! video/x-raw,format=BGR ! "

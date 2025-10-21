@@ -260,12 +260,6 @@ class HardwareManager:
 
             applied_order = selected_candidate.get("order", "native")
 
-            # Remember the raw response so callers (and the web UI) can inspect it.
-            self._battery_raw = selected_raw
-            self._battery_bytes = (low, high)
-            self._battery_voltage = float(voltage)
-            self._last_battery_read = now
-
             debug_candidates = []
             for candidate in candidates:
                 debug_candidates.append(
@@ -278,7 +272,23 @@ class HardwareManager:
                     }
                 )
 
-            self._battery_debug = {
+            prev_voltage = self._battery_voltage
+            margin_low = max(0.5, 0.05 * max(self.battery_full_voltage, 1.0))
+            margin_high = max(1.0, 0.2 * max(self.battery_full_voltage, 1.0))
+            valid_min = max(0.0, self.battery_empty_voltage - margin_low)
+            valid_max = self.battery_full_voltage + margin_high
+            max_jump = None
+            discard_reason = None
+
+            if prev_voltage is not None:
+                if voltage < valid_min or voltage > valid_max:
+                    discard_reason = "out_of_range"
+                else:
+                    max_jump = max(1.5, 0.25 * max(prev_voltage, self.battery_full_voltage))
+                    if abs(voltage - prev_voltage) > max_jump:
+                        discard_reason = "sudden_jump"
+
+            debug_info = {
                 "word_native": word_native,
                 "word_swapped": word_swapped,
                 "raw_selected": selected_raw,
@@ -293,7 +303,38 @@ class HardwareManager:
                 "shift": self.battery_shift,
                 "mask": self.battery_mask,
                 "signed": self.battery_signed,
+                "valid_min": valid_min,
+                "valid_max": valid_max,
+                "max_jump": max_jump,
             }
+
+            if discard_reason is not None:
+                debug_info.update(
+                    {
+                        "discarded": True,
+                        "discard_reason": discard_reason,
+                        "discarded_voltage": voltage,
+                        "previous_voltage": prev_voltage,
+                    }
+                )
+                self._battery_debug = debug_info
+                self._last_battery_read = now
+                logger.warning(
+                    "Discarding battery voltage sample %.3f V (%s); keeping previous reading %.3f V.",
+                    float(voltage),
+                    discard_reason,
+                    float(prev_voltage),
+                )
+                return prev_voltage
+
+            # Remember the raw response so callers (and the web UI) can inspect it.
+            self._battery_raw = selected_raw
+            self._battery_bytes = (low, high)
+            self._battery_voltage = float(voltage)
+            self._last_battery_read = now
+
+            debug_info["discarded"] = False
+            self._battery_debug = debug_info
 
             processed_masked = processed if processed is not None else 0
             mask = (1 << bits) - 1
