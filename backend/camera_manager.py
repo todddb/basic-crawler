@@ -89,15 +89,18 @@ class CameraManager:
         # Front camera runtime state
         self.front_supported = False
         self.front_active = False
+        self.front_backend: Optional[str] = None  # "picamera2" (default) or "gstreamer"
         self._front_thread: Optional[threading.Thread] = None
         self._front_stop = threading.Event()
         self._front_lock = threading.Lock()
         self._front_last_jpeg: Optional[bytes] = None
+        self._front_cap: Optional[cv2.VideoCapture] = None
         self._picam2 = None
 
         # Rear camera runtime state
         self.rear_supported = False
         self.rear_active = False
+        self.rear_backend: Optional[str] = None  # mirrors front backend behaviour
         self._rear_thread: Optional[threading.Thread] = None
         self._rear_stop = threading.Event()
         self._rear_lock = threading.Lock()
@@ -253,6 +256,15 @@ class CameraManager:
         """Alias for stop + cleanup resources."""
         self.stop_cameras()
 
+    def cleanup(self):
+        """Public cleanup hook used by the app on shutdown."""
+        self.stop_cameras()
+        # Drop references so large frame buffers can be GC'd promptly
+        with self._front_lock:
+            self._front_last_jpeg = None
+        with self._rear_lock:
+            self._rear_last_jpeg = None
+
     def get_latest_frame(self, which: str) -> Optional[bytes]:
         """Return the latest JPEG frame for 'front' or 'rear'."""
         if which == "front":
@@ -315,8 +327,11 @@ class CameraManager:
         try:
             from picamera2 import Picamera2
         except Exception:
-            logger.info("Picamera2 not available; %s camera disabled.", which)
-            return False
+            logger.info(
+                "Picamera2 not available; attempting libcamerasrc fallback for %s camera.",
+                which,
+            )
+            return self._probe_libcamera_gstreamer(which, camera_id)
 
         cam = None
         try:
@@ -324,6 +339,10 @@ class CameraManager:
             if camera_id is not None:
                 kwargs["camera_num"] = int(camera_id)
             cam = Picamera2(**kwargs)
+            if which == "front":
+                self.front_backend = "picamera2"
+            else:
+                self.rear_backend = "picamera2"
             logger.info(
                 "Picamera2 detected for %s camera (camera_id=%s).",
                 which,
@@ -337,7 +356,7 @@ class CameraManager:
                 camera_id,
                 exc,
             )
-            return False
+            return self._probe_libcamera_gstreamer(which, camera_id)
         finally:
             if cam is not None:
                 try:
@@ -361,6 +380,71 @@ class CameraManager:
         logger.info("No USB camera detected for %s camera on /dev/video[0-3].", which)
         return False, None
 
+    def _probe_libcamera_gstreamer(self, which: str, camera_id: Optional[int]) -> bool:
+        """Attempt to stream using libcamerasrc via OpenCV/GStreamer as a fallback."""
+        pipeline = self._build_gstreamer_pipeline(which, camera_id)
+        if not pipeline:
+            return False
+
+        cap = self._open_gstreamer_capture(pipeline)
+        if cap is None or not cap.isOpened():
+            logger.info(
+                "libcamerasrc fallback failed to open for %s camera (pipeline=%s)",
+                which,
+                pipeline,
+            )
+            if cap is not None:
+                cap.release()
+            return False
+
+        ok, frame = cap.read()
+        cap.release()
+        if not ok or frame is None:
+            logger.info("libcamerasrc fallback produced no frames for %s camera", which)
+            return False
+
+        if which == "front":
+            self.front_backend = "gstreamer"
+        else:
+            self.rear_backend = "gstreamer"
+
+        logger.info("%s camera streaming via libcamerasrc (GStreamer) backend.", which.capitalize())
+        return True
+
+    # ---------------------- Helper utilities ---------------------------------
+
+    def _build_gstreamer_pipeline(self, which: str, camera_id: Optional[int]) -> Optional[str]:
+        """Construct a libcamerasrc pipeline string for the requested camera."""
+        if which == "front":
+            width, height = self.front_res
+            fps = int(max(1, self.front_fps))
+        else:
+            width, height = self.rear_res
+            fps = int(max(1, self.rear_fps))
+
+        # libcamerasrc currently selects the first camera when no name is provided.
+        # Passing camera-name is fragile across OS versions, so we rely on default
+        # ordering for the fallback to maximise compatibility.
+        src = "libcamerasrc"
+        caps = f"video/x-raw,width={int(width)},height={int(height)},framerate={fps}/1"
+        pipeline = (
+            f"{src} ! {caps} ! videoconvert ! video/x-raw,format=BGR ! "
+            "appsink drop=true max-buffers=1"
+        )
+        return pipeline
+
+    def _open_gstreamer_capture(self, pipeline: str) -> Optional[cv2.VideoCapture]:
+        """Open a GStreamer pipeline via OpenCV, trying CAP_GSTREAMER first."""
+        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        cap = cv2.VideoCapture(pipeline)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        return None
+
     # ---------------------- Front (Picamera2) thread -------------------------
 
     def _start_front_thread(self):
@@ -370,12 +454,26 @@ class CameraManager:
             raise RuntimeError(
                 f"Front camera type '{self.front_type}' is not supported for streaming threads."
             )
-        logger.info(
-            "Initializing Picamera2 (front, camera_id=%s)...",
-            self.front_camera_id if self.front_camera_id is not None else "default",
-        )
+
+        backend = self.front_backend or "picamera2"
+        if backend == "picamera2":
+            logger.info(
+                "Initializing Picamera2 (front, camera_id=%s)...",
+                self.front_camera_id if self.front_camera_id is not None else "default",
+            )
+            target = self._front_loop
+        elif backend == "gstreamer":
+            pipeline = self._build_gstreamer_pipeline("front", self.front_camera_id)
+            logger.info(
+                "Initializing libcamerasrc (front) via GStreamer pipeline: %s",
+                pipeline,
+            )
+            target = self._front_loop_gstreamer
+        else:
+            raise RuntimeError("Front camera backend not available")
+
         self._front_stop.clear()
-        self._front_thread = threading.Thread(target=self._front_loop, name="front_cam", daemon=True)
+        self._front_thread = threading.Thread(target=target, name="front_cam", daemon=True)
         self._front_thread.start()
         # Wait a moment to confirm frames begin
         time.sleep(0.25)
@@ -388,7 +486,7 @@ class CameraManager:
         self._front_thread.join(timeout=2.0)
         self._front_thread = None
         # Close camera instance
-        if self._picam2 is not None:
+        if self.front_backend == "picamera2" and self._picam2 is not None:
             try:
                 self._picam2.stop()
             except Exception:
@@ -398,6 +496,12 @@ class CameraManager:
             except Exception:
                 pass
             self._picam2 = None
+        elif self.front_backend == "gstreamer" and self._front_cap is not None:
+            try:
+                self._front_cap.release()
+            except Exception:
+                pass
+            self._front_cap = None
         self.front_active = False
         logger.info("Front camera stopped.")
 
@@ -462,6 +566,52 @@ class CameraManager:
             self._picam2 = None
             self.front_active = False
 
+    def _front_loop_gstreamer(self):
+        cap = None
+        try:
+            pipeline = self._build_gstreamer_pipeline("front", self.front_camera_id)
+            cap = self._open_gstreamer_capture(pipeline)
+            if cap is None or not cap.isOpened():
+                logger.error("Failed to open GStreamer pipeline for front camera: %s", pipeline)
+                return
+
+            self._front_cap = cap
+            target_delay = 1.0 / max(1, self.front_fps)
+            quality = int(self.front_quality)
+
+            while not self._front_stop.is_set():
+                t0 = time.time()
+                ok, frame_bgr = cap.read()
+                if not ok or frame_bgr is None:
+                    time.sleep(0.02)
+                    continue
+
+                frame_bgr = np.ascontiguousarray(frame_bgr)
+                h, w = frame_bgr.shape[:2]
+                if (w, h) != tuple(self.front_res):
+                    frame_bgr = cv2.resize(frame_bgr, self.front_res, interpolation=cv2.INTER_AREA)
+
+                frame_bgr = cv2.flip(frame_bgr, 1)
+                ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+                if ok:
+                    with self._front_lock:
+                        self._front_last_jpeg = buf.tobytes()
+
+                elapsed = time.time() - t0
+                if elapsed < target_delay:
+                    time.sleep(target_delay - elapsed)
+
+        except Exception:
+            logger.exception("Front camera GStreamer loop crashed")
+        finally:
+            try:
+                if cap is not None:
+                    cap.release()
+            except Exception:
+                pass
+            self._front_cap = None
+            self.front_active = False
+
     # ---------------------- Rear camera thread -------------------------------
 
     def _start_rear_thread(self):
@@ -470,11 +620,22 @@ class CameraManager:
 
         self._rear_stop.clear()
         if self.rear_type == "picamera2":
-            logger.info(
-                "Initializing Picamera2 (rear, camera_id=%s)...",
-                self.rear_camera_id if self.rear_camera_id is not None else "default",
-            )
-            target = self._rear_loop_picamera2
+            backend = self.rear_backend or "picamera2"
+            if backend == "picamera2":
+                logger.info(
+                    "Initializing Picamera2 (rear, camera_id=%s)...",
+                    self.rear_camera_id if self.rear_camera_id is not None else "default",
+                )
+                target = self._rear_loop_picamera2
+            elif backend == "gstreamer":
+                pipeline = self._build_gstreamer_pipeline("rear", self.rear_camera_id)
+                logger.info(
+                    "Initializing libcamerasrc (rear) via GStreamer pipeline: %s",
+                    pipeline,
+                )
+                target = self._rear_loop_gstreamer
+            else:
+                raise RuntimeError("Rear camera backend not available")
         elif self.rear_type == "usb":
             if self._rear_index is None:
                 raise RuntimeError("No USB camera index available.")
@@ -497,7 +658,7 @@ class CameraManager:
         self._rear_thread = None
 
         if self.rear_type == "picamera2":
-            if self._rear_picam2 is not None:
+            if self.rear_backend == "picamera2" and self._rear_picam2 is not None:
                 try:
                     self._rear_picam2.stop()
                 except Exception:
@@ -507,6 +668,12 @@ class CameraManager:
                 except Exception:
                     pass
                 self._rear_picam2 = None
+            elif self.rear_backend == "gstreamer" and self._rear_cap is not None:
+                try:
+                    self._rear_cap.release()
+                except Exception:
+                    pass
+                self._rear_cap = None
         else:
             if self._rear_cap is not None:
                 try:
@@ -616,5 +783,50 @@ class CameraManager:
             except Exception:
                 pass
             self._rear_picam2 = None
+            self.rear_active = False
+
+    def _rear_loop_gstreamer(self):
+        cap = None
+        try:
+            pipeline = self._build_gstreamer_pipeline("rear", self.rear_camera_id)
+            cap = self._open_gstreamer_capture(pipeline)
+            if cap is None or not cap.isOpened():
+                logger.error("Failed to open GStreamer pipeline for rear camera: %s", pipeline)
+                return
+
+            self._rear_cap = cap
+            target_delay = 1.0 / max(1, self.rear_fps)
+            quality = int(self.rear_quality)
+
+            while not self._rear_stop.is_set():
+                t0 = time.time()
+                ok, frame_bgr = cap.read()
+                if not ok or frame_bgr is None:
+                    time.sleep(0.02)
+                    continue
+
+                frame_bgr = np.ascontiguousarray(frame_bgr)
+                h, w = frame_bgr.shape[:2]
+                if (w, h) != tuple(self.rear_res):
+                    frame_bgr = cv2.resize(frame_bgr, self.rear_res, interpolation=cv2.INTER_AREA)
+
+                ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+                if ok:
+                    with self._rear_lock:
+                        self._rear_last_jpeg = buf.tobytes()
+
+                elapsed = time.time() - t0
+                if elapsed < target_delay:
+                    time.sleep(target_delay - elapsed)
+
+        except Exception:
+            logger.exception("Rear camera GStreamer loop crashed")
+        finally:
+            try:
+                if cap is not None:
+                    cap.release()
+            except Exception:
+                pass
+            self._rear_cap = None
             self.rear_active = False
 
