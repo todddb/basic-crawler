@@ -27,12 +27,14 @@ class ConfigManager:
             "cameras": {
                 "front": {
                     "type": "picamera2",
+                    "camera_id": 0,
                     "resolution": [768, 432],
                     "fps": 24,
                     "quality": 78
                 },
                 "rear": {
                     "type": "usb",
+                    "camera_id": 1,
                     "resolution": [320, 240],
                     "fps": 20,
                     "quality": 70
