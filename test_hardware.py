@@ -33,5 +33,6 @@ try:
     print("✓ Picamera2 available")
 except ImportError:
     print("✗ Picamera2 missing (USB camera only)")
+    print("  Install with: sudo apt install python3-picamera2")
 
 print("\nHardware test complete!")
