@@ -78,9 +78,9 @@ fi
 print_status "Creating project directories..."
 mkdir -p backend web/static/css web/static/js web/templates config logs media
 
-# Create Python virtual environment
-print_status "Creating virtual environment..."
-python3 -m venv venv
+# Create Python virtual environment with access to system site packages
+print_status "Creating virtual environment (with system packages)..."
+python3 -m venv venv --system-site-packages
 source venv/bin/activate
 
 # Upgrade pip first
