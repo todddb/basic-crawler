@@ -15,6 +15,9 @@ class HardwareManager:
         self.left_channel = int(self.config.get("motors", {}).get("left_channel", 0))
         self.right_channel = int(self.config.get("motors", {}).get("right_channel", 1))
         self.max_speed = int(self.config.get("motors", {}).get("max_speed", 100))
+        motors_cfg = self.config.get("motors", {})
+        self.left_inverted = self._parse_bool(motors_cfg.get("invert_left", False))
+        self.right_inverted = self._parse_bool(motors_cfg.get("invert_right", False))
         self.bus = None
         self.left_speed = 0
         self.right_speed = 0
@@ -23,7 +26,6 @@ class HardwareManager:
         self._battery_bytes = (None, None)
         self._last_battery_read = 0.0
 
-        motors_cfg = self.config.get("motors", {})
         battery_register = motors_cfg.get("battery_register", "0x40")
         self.battery_register = int(battery_register, 16) if battery_register is not None else None
         counts_per_volt = motors_cfg.get("battery_counts_per_volt")
@@ -88,6 +90,12 @@ class HardwareManager:
             logger.exception("Failed to initialize I2C bus")
             raise
 
+    @staticmethod
+    def _parse_bool(value):
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     def _clamp(self, value, lo, hi):
         return max(lo, min(hi, value))
 
@@ -99,12 +107,15 @@ class HardwareManager:
         right_speed = self._clamp(int(right_speed), -self.max_speed, self.max_speed)
         self.left_speed, self.right_speed = left_speed, right_speed
 
+        applied_left = -left_speed if self.left_inverted else left_speed
+        applied_right = -right_speed if self.right_inverted else right_speed
+
         # Example mapping: write signed speeds to two registers (adjust to your controller)
         try:
             # Convert -100..100 to 0..200 then shift to signed domain in controller as needed.
             # If your controller expects signed bytes directly: wrap to 0..255 with & 0xFF.
-            self.bus.write_byte_data(self.i2c_address, 0x33, left_speed & 0xFF)
-            self.bus.write_byte_data(self.i2c_address, 0x34, right_speed & 0xFF)
+            self.bus.write_byte_data(self.i2c_address, 0x33, applied_left & 0xFF)
+            self.bus.write_byte_data(self.i2c_address, 0x34, applied_right & 0xFF)
         except Exception:
             logger.exception("Failed writing motor speeds over I2C")
 
