@@ -55,6 +55,8 @@ class ConfigManager:
                 "battery_mask": None,
                 "battery_bits": 16,
                 "battery_signed": False,
+                "invert_left": False,
+                "invert_right": False,
             },
             "lighting": {
                 "led_bar": {
