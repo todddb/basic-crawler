@@ -20,14 +20,7 @@
     "i2c_address": "0x34",
     "max_speed": 100,
     "left_channel": 2,
-    "right_channel": 3,
-    "battery_register": "0x40",
-    "battery_scale": 0.0009858259131382881,
-    "battery_counts_per_volt": 1014.3778801843318,
-    "battery_offset": 0.0,
-    "battery_full_voltage": 12.6,
-    "battery_empty_voltage": 9.0,
-    "battery_refresh": 1.5
+    "right_channel": 3
   },
   "lighting": {
     "led_bar": {

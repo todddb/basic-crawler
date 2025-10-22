@@ -45,18 +45,6 @@ class ConfigManager:
                 "max_speed": 100,
                 "left_channel": 2,
                 "right_channel": 3,
-                "battery_register": "0x40",
-                "battery_scale": 0.0015384615384615385,
-                "battery_counts_per_volt": 650.0,
-                "battery_offset": 0.0,
-                "battery_full_voltage": 12.6,
-                "battery_empty_voltage": 9.0,
-                "battery_refresh": 1.5,
-                "battery_word_order": "auto",
-                "battery_shift": 0,
-                "battery_mask": None,
-                "battery_bits": 16,
-                "battery_signed": False,
             },
             "lighting": {
                 "led_bar": {
