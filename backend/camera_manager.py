@@ -731,6 +731,8 @@ class CameraManager:
                 if (w, h) != tuple(self.rear_res):
                     frame_bgr = cv2.resize(frame_bgr, self.rear_res, interpolation=cv2.INTER_AREA)
 
+                frame_bgr = cv2.flip(frame_bgr, 0)
+
                 ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
                 if ok:
                     with self._rear_lock:
@@ -778,6 +780,7 @@ class CameraManager:
                     continue
 
                 frame_bgr = np.ascontiguousarray(frame_rgb)
+                frame_bgr = cv2.flip(frame_bgr, 0)
 
                 ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
                 if ok:
@@ -828,6 +831,8 @@ class CameraManager:
                 h, w = frame_bgr.shape[:2]
                 if (w, h) != tuple(self.rear_res):
                     frame_bgr = cv2.resize(frame_bgr, self.rear_res, interpolation=cv2.INTER_AREA)
+
+                frame_bgr = cv2.flip(frame_bgr, 0)
 
                 ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
                 if ok:
