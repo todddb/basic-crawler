@@ -257,7 +257,7 @@
         <div class="control-label">RIGHT</div>
     </div>
     
-    <div id="status">Speed: L=0% R=0%</div>
+    <div id="status">Motors: L=0% R=0% | Ack: --</div>
     
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
@@ -271,15 +271,53 @@
         const MOTOR_COMMAND_INTERVAL = 60; // ms
         const SPEED_CURVE_EXPONENT = 2.4;
         const SPEED_DEAD_ZONE = 8;
+        const MOTOR_POLARITY = { left: 1, right: 1 };
+        const statusEl = document.getElementById('status');
+        const statusState = {
+            command: { left: 0, right: 0 },
+            ack: null,
+        };
+
+        function clampToPercent(value) {
+            const num = Number(value);
+            if (Number.isNaN(num)) {
+                return 0;
+            }
+            return Math.max(-100, Math.min(100, Math.round(num)));
+        }
+
+        function updateStatus() {
+            const { command, ack } = statusState;
+            const ackText = ack
+                ? `Ack: L=${ack.left}% R=${ack.right}%`
+                : 'Ack: --';
+            statusEl.textContent =
+                `Motors: L=${command.left}% R=${command.right}% | ${ackText}`;
+        }
+
+        updateStatus();
 
         socket.on('connect', () => {
             document.getElementById('connection-status').textContent = 'Connected';
             document.getElementById('connection-status').style.color = '#4CAF50';
+            statusState.ack = null;
+            updateStatus();
         });
-        
+
         socket.on('disconnect', () => {
             document.getElementById('connection-status').textContent = 'Disconnected';
             document.getElementById('connection-status').style.color = '#f44336';
+            statusState.ack = null;
+            updateStatus();
+        });
+
+        socket.on('motor_ack', (ack) => {
+            if (!ack) return;
+            statusState.ack = {
+                left: clampToPercent(ack.left),
+                right: clampToPercent(ack.right),
+            };
+            updateStatus();
         });
         
         // Camera management
@@ -461,11 +499,13 @@
             const now = performance.now();
             const timeSinceLast = now - lastMotorSend;
             const send = () => {
-                const display = { left: leftSlider.value, right: rightSlider.value };
-                const payload = { left: -leftSlider.value, right: -rightSlider.value };
-                socket.volatile.emit('motor_control', payload);
-                document.getElementById('status').textContent =
-                    `Speed: L=${display.left}% R=${display.right}%`;
+                const command = {
+                    left: clampToPercent(leftSlider.value * MOTOR_POLARITY.left),
+                    right: clampToPercent(rightSlider.value * MOTOR_POLARITY.right),
+                };
+                statusState.command = { ...command };
+                socket.volatile.emit('motor_control', command);
+                updateStatus();
                 lastMotorSend = performance.now();
                 motorSendScheduled = false;
             };
@@ -489,7 +529,9 @@
             rightSlider.value = 0;
             leftSlider.resetThumb(false);
             rightSlider.resetThumb(false);
-            document.getElementById('status').textContent = 'STOPPED';
+            statusState.command = { left: 0, right: 0 };
+            statusState.ack = null;
+            statusEl.textContent = 'STOPPED';
         }
 
         function shutdownCrawler() {
