@@ -461,11 +461,13 @@
             const now = performance.now();
             const timeSinceLast = now - lastMotorSend;
             const send = () => {
-                const display = { left: leftSlider.value, right: rightSlider.value };
-                const payload = { left: leftSlider.value, right: rightSlider.value };
-                socket.volatile.emit('motor_control', payload);
+                const commanded = {
+                    left: -leftSlider.value,
+                    right: -rightSlider.value
+                };
+                socket.volatile.emit('motor_control', commanded);
                 document.getElementById('status').textContent =
-                    `Speed: L=${display.left}% R=${display.right}%`;
+                    `Speed: L=${commanded.left}% R=${commanded.right}%`;
                 lastMotorSend = performance.now();
                 motorSendScheduled = false;
             };
