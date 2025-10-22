@@ -43,6 +43,8 @@ class ConfigManager:
             "motors": {
                 "i2c_address": "0x34",
                 "max_speed": 100,
+                "left_channel": 2,
+                "right_channel": 3,
                 "battery_register": "0x40",
                 "battery_scale": 0.0015384615384615385,
                 "battery_counts_per_volt": 650.0,
