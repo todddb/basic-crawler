@@ -6,13 +6,19 @@
     "front": {
       "type": "picamera2",
       "camera_id": 0,
-      "resolution": [1280, 720],
+      "resolution": [
+        1280,
+        720
+      ],
       "fps": 30
     },
     "rear": {
       "type": "picamera2",
       "camera_id": 1,
-      "resolution": [640, 480],
+      "resolution": [
+        640,
+        480
+      ],
       "fps": 15
     }
   },
@@ -27,7 +33,9 @@
     "battery_offset": 0.0,
     "battery_full_voltage": 12.6,
     "battery_empty_voltage": 9.0,
-    "battery_refresh": 1.5
+    "battery_refresh": 1.5,
+    "invert_left": true,
+    "invert_right": true
   },
   "lighting": {
     "led_bar": {
