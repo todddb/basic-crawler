@@ -40,6 +40,63 @@
             gap: 8px;
         }
 
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+
+        .toggle-container span {
+            color: #bbb;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #555;
+            transition: 0.2s;
+            border-radius: 12px;
+        }
+
+        .toggle-slider::before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #fff;
+            transition: 0.2s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #4CAF50;
+        }
+
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(22px);
+        }
+
         .btn {
             background: #333;
             color: #fff;
@@ -128,6 +185,10 @@
             display: none;
         }
         
+        .hidden {
+            display: none !important;
+        }
+
         .control-slider {
             position: fixed;
             width: 60px;
@@ -141,6 +202,53 @@
 
         .control-slider.left { left: 20px; bottom: 100px; }
         .control-slider.right { right: 20px; bottom: 100px; }
+
+        #joystick-control {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+        }
+
+        #joystick-base {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.18);
+            position: relative;
+            touch-action: none;
+            box-shadow: inset 0 10px 25px rgba(0,0,0,0.35);
+        }
+
+        #joystick-base.active {
+            background: rgba(76,175,80,0.18);
+            border-color: rgba(76,175,80,0.45);
+        }
+
+        #joystick-thumb {
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: #4CAF50;
+            border: 3px solid #fff;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 12px 25px rgba(0,0,0,0.4);
+            transition: transform 0.12s ease-out;
+        }
+
+        .joystick-label {
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: rgba(255,255,255,0.7);
+        }
 
         .slider-track {
             width: 40px;
@@ -216,6 +324,14 @@
                 <option value="low">Low Lag</option>
                 <option value="high">High Detail</option>
             </select>
+            <div class="toggle-container" title="Toggle control scheme">
+                <span>Tank</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="control-toggle" onchange="onControlToggle(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span>Joystick</span>
+            </div>
             <button id="camera-btn" class="btn" onclick="toggleCamera()">📹 Camera</button>
             <button class="btn emergency" onclick="emergencyStop()">🛑 STOP</button>
             <button class="btn shutdown" onclick="shutdownCrawler()">⏻ Shutdown</button>
@@ -243,18 +359,27 @@
         </div>
     </div>
     
-    <div class="control-slider left">
-        <div class="slider-track">
-            <div class="slider-thumb" id="left-thumb"></div>
+    <div id="tank-controls">
+        <div class="control-slider left">
+            <div class="slider-track">
+                <div class="slider-thumb" id="left-thumb"></div>
+            </div>
+            <div class="control-label">LEFT</div>
         </div>
-        <div class="control-label">LEFT</div>
+
+        <div class="control-slider right">
+            <div class="slider-track">
+                <div class="slider-thumb" id="right-thumb"></div>
+            </div>
+            <div class="control-label">RIGHT</div>
+        </div>
     </div>
-    
-    <div class="control-slider right">
-        <div class="slider-track">
-            <div class="slider-thumb" id="right-thumb"></div>
+
+    <div id="joystick-control" class="hidden">
+        <div id="joystick-base">
+            <div id="joystick-thumb"></div>
         </div>
-        <div class="control-label">RIGHT</div>
+        <div class="joystick-label">JOYSTICK</div>
     </div>
     
     <div id="status">Speed: L=0% R=0%</div>
@@ -376,6 +501,98 @@
         }
         
         // Motor control
+        const controlState = {
+            mode: 'tank',
+            left: 0,
+            right: 0
+        };
+
+        let leftSlider;
+        let rightSlider;
+        let joystickControl;
+
+        function clampPercent(value) {
+            if (!Number.isFinite(value)) return 0;
+            return Math.max(-100, Math.min(100, Math.round(value)));
+        }
+
+        function queueMotorCommand(force = false) {
+            const now = performance.now();
+            const timeSinceLast = now - lastMotorSend;
+            const send = () => {
+                const payload = { left: -controlState.left, right: -controlState.right };
+                socket.volatile.emit('motor_control', payload);
+                document.getElementById('status').textContent =
+                    `Speed: L=${controlState.left}% R=${controlState.right}%`;
+                lastMotorSend = performance.now();
+                motorSendScheduled = false;
+            };
+
+            if (force) {
+                send();
+                return;
+            }
+
+            if (timeSinceLast >= MOTOR_COMMAND_INTERVAL) {
+                send();
+            } else if (!motorSendScheduled) {
+                motorSendScheduled = true;
+                setTimeout(() => send(), MOTOR_COMMAND_INTERVAL - timeSinceLast);
+            }
+        }
+
+        function setControlSide(side, value, force = false) {
+            controlState[side] = clampPercent(value);
+            queueMotorCommand(force);
+        }
+
+        function setControlValues(left, right, force = false) {
+            controlState.left = clampPercent(left);
+            controlState.right = clampPercent(right);
+            queueMotorCommand(force);
+        }
+
+        function onControlToggle(checked) {
+            setControlMode(checked ? 'joystick' : 'tank');
+        }
+
+        function setControlMode(mode) {
+            if (mode !== 'tank' && mode !== 'joystick') return;
+            if (controlState.mode === mode) {
+                const toggleInput = document.getElementById('control-toggle');
+                if (toggleInput && toggleInput.checked !== (mode === 'joystick')) {
+                    toggleInput.checked = mode === 'joystick';
+                }
+                return;
+            }
+
+            controlState.mode = mode;
+
+            const tankControls = document.getElementById('tank-controls');
+            const joystickControls = document.getElementById('joystick-control');
+            const toggleInput = document.getElementById('control-toggle');
+
+            if (toggleInput && toggleInput.checked !== (mode === 'joystick')) {
+                toggleInput.checked = mode === 'joystick';
+            }
+
+            if (tankControls && joystickControls) {
+                if (mode === 'joystick') {
+                    tankControls.classList.add('hidden');
+                    joystickControls.classList.remove('hidden');
+                } else {
+                    tankControls.classList.remove('hidden');
+                    joystickControls.classList.add('hidden');
+                }
+            }
+
+            if (joystickControl) joystickControl.cancel();
+            if (leftSlider) leftSlider.cancel();
+            if (rightSlider) rightSlider.cancel();
+
+            setControlValues(0, 0, true);
+        }
+
         class MotorSlider {
             constructor(element, side) {
                 this.thumb = element;
@@ -393,11 +610,13 @@
             }
 
             startDrag(e) {
+                if (controlState.mode !== 'tank') return;
                 e.preventDefault();
                 this.dragging = true;
                 this.pointerId = e.pointerId;
                 this.thumb.setPointerCapture(this.pointerId);
                 this.thumb.classList.add('active');
+                this.thumb.style.transition = '';
                 this.updateValueFromEvent(e);
             }
 
@@ -408,18 +627,30 @@
 
             endDrag(e) {
                 if (!this.dragging || (e && e.pointerId !== this.pointerId)) return;
+                this.releasePointer();
+                this.dragging = false;
+                this.value = 0;
+                this.resetThumb(true);
+                setControlSide(this.side, this.value, true);
+            }
 
+            releasePointer() {
                 if (this.pointerId !== null) {
                     try { this.thumb.releasePointerCapture(this.pointerId); } catch (err) {}
                 }
                 this.pointerId = null;
+                this.thumb.classList.remove('active');
+            }
+
+            cancel() {
+                this.releasePointer();
                 this.dragging = false;
                 this.value = 0;
-                this.resetThumb(true);
-                queueMotorCommand(true);
+                this.resetThumb(false);
             }
 
             updateValueFromEvent(e) {
+                if (controlState.mode !== 'tank') return;
                 const rect = this.track.getBoundingClientRect();
                 const thumbHeight = this.thumb.offsetHeight;
                 const range = Math.max(1, rect.height - thumbHeight);
@@ -436,7 +667,7 @@
                     value = 0;
                 }
                 this.value = Math.max(-100, Math.min(100, value));
-                queueMotorCommand();
+                setControlSide(this.side, this.value);
             }
 
             resetThumb(animate = true) {
@@ -446,6 +677,8 @@
                 this.thumb.classList.remove('active');
                 if (animate) {
                     this.thumb.style.transition = 'top 0.12s ease-out';
+                } else {
+                    this.thumb.style.transition = '';
                 }
                 this.thumb.style.top = `${center}px`;
                 if (animate) {
@@ -454,41 +687,125 @@
             }
         }
 
-        const leftSlider = new MotorSlider(document.getElementById('left-thumb'), 'left');
-        const rightSlider = new MotorSlider(document.getElementById('right-thumb'), 'right');
+        class JoystickControl {
+            constructor(baseElement, thumbElement) {
+                this.base = baseElement;
+                this.thumb = thumbElement;
+                this.pointerId = null;
+                this.active = false;
 
-        function queueMotorCommand(force = false) {
-            const now = performance.now();
-            const timeSinceLast = now - lastMotorSend;
-            const send = () => {
-                const display = { left: leftSlider.value, right: rightSlider.value };
-                const payload = { left: -leftSlider.value, right: -rightSlider.value };
-                socket.volatile.emit('motor_control', payload);
-                document.getElementById('status').textContent =
-                    `Speed: L=${display.left}% R=${display.right}%`;
-                lastMotorSend = performance.now();
-                motorSendScheduled = false;
-            };
-
-            if (force) {
-                send();
-                return;
+                this.base.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                this.base.addEventListener('pointerdown', (e) => this.start(e));
+                this.base.addEventListener('pointermove', (e) => this.move(e));
+                this.base.addEventListener('pointerup', (e) => this.end(e));
+                this.base.addEventListener('pointercancel', (e) => this.end(e));
             }
 
-            if (timeSinceLast >= MOTOR_COMMAND_INTERVAL) {
-                send();
-            } else if (!motorSendScheduled) {
-                motorSendScheduled = true;
-                setTimeout(() => send(), MOTOR_COMMAND_INTERVAL - timeSinceLast);
+            start(e) {
+                if (controlState.mode !== 'joystick') return;
+                e.preventDefault();
+                this.active = true;
+                this.pointerId = e.pointerId;
+                this.base.setPointerCapture(this.pointerId);
+                this.thumb.style.transition = 'none';
+                this.base.classList.add('active');
+                this.updateFromEvent(e);
+            }
+
+            move(e) {
+                if (!this.active || e.pointerId !== this.pointerId) return;
+                this.updateFromEvent(e);
+            }
+
+            end(e) {
+                if (!this.active || (e && e.pointerId !== this.pointerId)) return;
+                if (this.pointerId !== null) {
+                    try { this.base.releasePointerCapture(this.pointerId); } catch (err) {}
+                }
+                this.pointerId = null;
+                this.active = false;
+                this.reset(true);
+                setControlValues(0, 0, true);
+            }
+
+            cancel() {
+                if (this.pointerId !== null) {
+                    try { this.base.releasePointerCapture(this.pointerId); } catch (err) {}
+                }
+                this.pointerId = null;
+                this.active = false;
+                this.reset(false);
+            }
+
+            updateFromEvent(e) {
+                if (controlState.mode !== 'joystick') return;
+                const rect = this.base.getBoundingClientRect();
+                const radius = rect.width / 2;
+                if (radius <= 0) return;
+
+                let offsetX = e.clientX - (rect.left + radius);
+                let offsetY = e.clientY - (rect.top + radius);
+                const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+                if (distance > radius) {
+                    const scale = radius / distance;
+                    offsetX *= scale;
+                    offsetY *= scale;
+                }
+
+                this.thumb.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
+
+                const normalizedX = offsetX / radius;
+                const normalizedY = -offsetY / radius;
+
+                let forward = normalizedY;
+                let turn = normalizedX;
+
+                let left = forward + turn;
+                let right = forward - turn;
+
+                const maxMagnitude = Math.max(1, Math.max(Math.abs(left), Math.abs(right)));
+                left /= maxMagnitude;
+                right /= maxMagnitude;
+
+                let leftCurved = Math.sign(left) * Math.pow(Math.abs(left), SPEED_CURVE_EXPONENT);
+                let rightCurved = Math.sign(right) * Math.pow(Math.abs(right), SPEED_CURVE_EXPONENT);
+
+                let leftPercent = Math.round(leftCurved * 100);
+                let rightPercent = Math.round(rightCurved * 100);
+
+                if (Math.abs(leftPercent) < SPEED_DEAD_ZONE) leftPercent = 0;
+                if (Math.abs(rightPercent) < SPEED_DEAD_ZONE) rightPercent = 0;
+
+                setControlValues(leftPercent, rightPercent);
+            }
+
+            reset(animate = true) {
+                this.base.classList.remove('active');
+                if (animate) {
+                    this.thumb.style.transition = 'transform 0.12s ease-out';
+                } else {
+                    this.thumb.style.transition = '';
+                }
+                this.thumb.style.transform = 'translate(-50%, -50%)';
+                if (animate) {
+                    setTimeout(() => { this.thumb.style.transition = ''; }, 150);
+                }
             }
         }
-        
+
+        leftSlider = new MotorSlider(document.getElementById('left-thumb'), 'left');
+        rightSlider = new MotorSlider(document.getElementById('right-thumb'), 'right');
+        joystickControl = new JoystickControl(
+            document.getElementById('joystick-base'),
+            document.getElementById('joystick-thumb')
+        );
+
         function emergencyStop() {
             socket.emit('emergency_stop');
-            leftSlider.value = 0;
-            rightSlider.value = 0;
-            leftSlider.resetThumb(false);
-            rightSlider.resetThumb(false);
+            if (leftSlider) leftSlider.cancel();
+            if (rightSlider) rightSlider.cancel();
+            if (joystickControl) joystickControl.cancel();
+            setControlValues(0, 0, true);
             document.getElementById('status').textContent = 'STOPPED';
         }
 
