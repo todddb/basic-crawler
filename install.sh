@@ -80,26 +80,23 @@ mkdir -p backend web/static/css web/static/js web/templates config logs media
 
 # Create Python virtual environment with access to system site packages
 print_status "Creating virtual environment (with system packages)..."
-python3 -m venv venv --system-site-packages
+if [ -d "--system-site-packages" ]; then
+    print_warning "Cleaning up stray '--system-site-packages' directory from previous installs..."
+    rm -rf -- "--system-site-packages"
+fi
+python3 -m venv --system-site-packages venv
 source venv/bin/activate
 
 # Upgrade pip first
 pip install --upgrade pip setuptools wheel
 
-# Create requirements.txt with compatible versions
-cat > requirements.txt << 'EOF'
-Flask>=2.3.0
-Flask-SocketIO>=5.3.0
-eventlet>=0.33.3
-opencv-python>=4.8.0
-Pillow>=9.0.0
-numpy>=1.21.0
-psutil>=5.9.0
-smbus2
-EOF
-
 # Install Python packages
-print_status "Installing Python dependencies..."
+if [ ! -f requirements.txt ]; then
+    print_error "requirements.txt not found. Please run this script from the repository root."
+    exit 1
+fi
+
+print_status "Installing Python dependencies from requirements.txt..."
 pip install -r requirements.txt
 
 # Try to install picamera2 in venv if not system-installed
