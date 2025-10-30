@@ -5,8 +5,8 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
 ## Hardware and Materials
 
 * Review the complete bill of materials in [doc/parts.md](doc/parts.md) before you begin ordering parts.
+* Choose cameras from the list: either the Arducam wide modules in the bill of materials **or** Raspberry Pi Camera Module 3 units. The official Pi cameras cost a little more but remain fully compatible; just be sure to use the correct flat-flex cables for the Pi 5 connectors.
 * Wire the motors, cameras, power, and Raspberry Pi 5 following the reference wiring diagram in [doc/wiring.png](doc/wiring.png). The diagram aligns with the default configuration files in this repository.
-* Either the Arducam wide modules listed in the bill of materials **or** Raspberry Pi Camera Module 3 units work with this software. The official Pi cameras cost a little more but remain fully compatible; just be sure to use the correct flat-flex cables for the Pi 5 camera connectors.
 
 ## 1. Prepare the Raspberry Pi OS USB Drive
 
@@ -95,6 +95,7 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
 ## 5. Next Steps
 
 * Customize `config/default_config.json` (or your chosen config file) to match any hardware changes.
+* Revisit [doc/parts.md](doc/parts.md) and [doc/wiring.png](doc/wiring.png) whenever you adjust hardware; the software assumes those defaults.
 * Enable the optional `crawler.service` systemd unit created by the installer to auto-start on boot:
 
   ```bash
@@ -102,7 +103,6 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
   sudo systemctl start crawler
   ```
 
-* Revisit [doc/parts.md](doc/parts.md) and [doc/wiring.png](doc/wiring.png) whenever you adjust hardware; the software assumes those defaults.
 
 ## Support
 
