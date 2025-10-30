@@ -1,3 +1,6 @@
+PLEASE BE CAREFUL IF YOU TRY TO BUILD THIS CRAWLER!
+I provide this as a free resource, but I am not responsible for inuury to damage to your equipment for any reason if you try to build this.
+
 # Crawler Remote Control Vehicle
 
 This repository contains the software for a Raspberry Pi 5-based crawler robot with dual cameras, I²C motor control, and a web-based driver interface. The project targets a clean Raspberry Pi OS installation that boots from the **SanDisk 128 GB Ultra USB drive** listed in the [materials list](doc/parts.md) and uses the wiring shown in [doc/wiring.png](doc/wiring.png).
