@@ -60,7 +60,7 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
 2. Clone this repository and move into the project directory:
 
    ```bash
-   git clone https://github.com/<your-account>/basic-crawler.git
+   git clone https://github.com/todddb/basic-crawler.git
    cd basic-crawler
    ```
 
