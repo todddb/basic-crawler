@@ -2,6 +2,8 @@
 
 ## Required Parts
 
+> ℹ️ The build was validated with Raspberry Pi Camera Module 3 units. They are drop-in replacements for the Arducam wide modules listed below, so choose whichever is easier to source—just match them with the correct Pi 5 camera adapter cables.
+
 | Item | Price | Link |
 |------|-------|------|
 | Hiwonder Tank Base (includes controller) | $100 | [Amazon](https://amzn.to/4nyPayK) |
