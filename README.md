@@ -6,6 +6,7 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
 
 * Review the complete bill of materials in [doc/parts.md](doc/parts.md) before you begin ordering parts.
 * Wire the motors, cameras, power, and Raspberry Pi 5 following the reference wiring diagram in [doc/wiring.png](doc/wiring.png). The diagram aligns with the default configuration files in this repository.
+* Either the Arducam wide modules listed in the bill of materials **or** Raspberry Pi Camera Module 3 units work with this software. The official Pi cameras cost a little more but remain fully compatible; just be sure to use the correct flat-flex cables for the Pi 5 camera connectors.
 
 ## 1. Prepare the Raspberry Pi OS USB Drive
 
@@ -34,6 +35,19 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
    ```
 
    The reboot ensures the kernel and firmware updates are loaded.
+4. **If you power the Pi 5 from a battery or non-PD USB-C supply:** the firmware performs a power-supply negotiation check on every boot and may pause with an on-screen prompt. To bypass the check once you have verified your supply is stable enough for the robot, edit the bootloader configuration and disable the check:
+
+   ```bash
+   sudo -E rpi-eeprom-config --edit
+   ```
+
+   Add (or update) the following line in the editor that opens, then save and exit:
+
+   ```
+   POWER_SUPPLY_CHECK=0
+   ```
+
+   Reboot to apply the change. The Pi will now boot without waiting for power confirmation. You can re-enable the safeguard later by setting the value back to `1`.
 
 ## 3. Install Project Dependencies
 
