@@ -621,22 +621,34 @@
             inputState.gamepadConnected = connected;
         }
 
+        function getGamepadList() {
+            const getPadsFn = navigator.getGamepads || navigator.webkitGetGamepads || navigator.msGetGamepads;
+            if (!getPadsFn) {
+                return null;
+            }
+            try {
+                return getPadsFn.call(navigator);
+            } catch (err) {
+                console.warn('Unable to query gamepads:', err);
+                return null;
+            }
+        }
+
         function getActiveGamepad() {
-            if (!navigator.getGamepads) return null;
-            const pads = navigator.getGamepads();
+            const pads = getGamepadList();
             if (!pads) return null;
 
-            if (inputState.gamepadIndex !== null) {
+            if (inputState.gamepadIndex !== null && pads.length > inputState.gamepadIndex) {
                 const indexedPad = pads[inputState.gamepadIndex];
-                if (indexedPad) {
+                if (indexedPad && indexedPad.connected) {
                     return indexedPad;
                 }
             }
 
-            const padList = Array.from(pads);
-            for (let i = 0; i < padList.length; i++) {
-                const pad = padList[i];
-                if (pad) {
+            const length = typeof pads.length === 'number' ? pads.length : 0;
+            for (let i = 0; i < length; i++) {
+                const pad = pads[i];
+                if (pad && pad.connected) {
                     inputState.gamepadIndex = pad.index ?? i;
                     return pad;
                 }
@@ -768,7 +780,11 @@
                     updateGamepadStatus('Gamepad API not supported in this browser.', false);
                     stopGamepadPolling();
                 } else {
-                    if (inputState.gamepadConnected && inputState.gamepadName) {
+                    const existingPad = getActiveGamepad();
+                    if (existingPad) {
+                        inputState.gamepadName = existingPad.id;
+                        updateGamepadStatus(`Connected: ${existingPad.id}`, true);
+                    } else if (inputState.gamepadConnected && inputState.gamepadName) {
                         updateGamepadStatus(`Connected: ${inputState.gamepadName}`, true);
                     } else {
                         updateGamepadStatus('Waiting for Xbox controller...', false);
