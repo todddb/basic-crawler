@@ -625,15 +625,23 @@
             if (!navigator.getGamepads) return null;
             const pads = navigator.getGamepads();
             if (!pads) return null;
-            if (inputState.gamepadIndex !== null && pads[inputState.gamepadIndex]) {
-                return pads[inputState.gamepadIndex];
+
+            if (inputState.gamepadIndex !== null) {
+                const indexedPad = pads[inputState.gamepadIndex];
+                if (indexedPad) {
+                    return indexedPad;
+                }
             }
-            for (const pad of pads) {
+
+            const padList = Array.from(pads);
+            for (let i = 0; i < padList.length; i++) {
+                const pad = padList[i];
                 if (pad) {
-                    inputState.gamepadIndex = pad.index;
+                    inputState.gamepadIndex = pad.index ?? i;
                     return pad;
                 }
             }
+
             return null;
         }
 
