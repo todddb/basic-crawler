@@ -40,6 +40,23 @@
             gap: 8px;
         }
 
+        #settings-btn {
+            width: 40px;
+            height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0;
+        }
+
+        #settings-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
         .toggle-container {
             display: flex;
             align-items: center;
@@ -118,6 +135,96 @@
             border: 1px solid #444;
             padding: 8px 10px;
             border-radius: 4px;
+        }
+
+        #settings-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+
+        #settings-overlay.hidden {
+            display: none;
+        }
+
+        #settings-panel {
+            background: rgba(20, 20, 20, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            width: min(420px, 90vw);
+            padding: 20px 24px;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .settings-header h3 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        #settings-close {
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        #settings-close:hover {
+            color: #4CAF50;
+        }
+
+        .settings-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .settings-section label {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .settings-option-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .radio-option {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+
+        .radio-option input {
+            accent-color: #4CAF50;
+        }
+
+        .radio-option.active {
+            border-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.18);
         }
 
         #video-container {
@@ -319,20 +426,7 @@
             <span id="connection-status">Disconnected</span>
         </div>
         <div id="header-controls">
-            <label for="quality-select" style="font-size: 12px;">Stream:</label>
-            <select id="quality-select" onchange="changeStreamQuality(this.value)">
-                <option value="balanced">Balanced</option>
-                <option value="low">Low Lag</option>
-                <option value="high">High Detail</option>
-            </select>
-            <div class="toggle-container" title="Toggle control scheme">
-                <span>Tank</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="control-toggle" onchange="onControlToggle(this.checked)">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span>Joystick</span>
-            </div>
+            <button id="settings-btn" class="btn" onclick="toggleSettings()" title="Settings">⚙️</button>
             <button id="camera-btn" class="btn" onclick="toggleCamera()">📹 Camera</button>
             <button class="btn emergency" onclick="emergencyStop()">🛑 STOP</button>
             <button class="btn shutdown" onclick="shutdownCrawler()">⏻ Shutdown</button>
@@ -384,7 +478,54 @@
     </div>
     
     <div id="status">Speed: L=0% R=0%</div>
-    
+
+    <div id="settings-overlay" class="hidden">
+        <div id="settings-panel">
+            <div class="settings-header">
+                <h3>Settings</h3>
+                <button id="settings-close" onclick="toggleSettings()" aria-label="Close settings">✕</button>
+            </div>
+
+            <div class="settings-section">
+                <label for="quality-select">Video Quality</label>
+                <select id="quality-select" onchange="changeStreamQuality(this.value)">
+                    <option value="balanced">Balanced</option>
+                    <option value="low">Low Lag</option>
+                    <option value="high">High Detail</option>
+                </select>
+            </div>
+
+            <div class="settings-section">
+                <label>Control Style</label>
+                <div class="settings-option-group">
+                    <div class="toggle-container" title="Toggle control scheme">
+                        <span>Tank</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="control-toggle" onchange="onControlToggle(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Joystick</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <label>Input Device</label>
+                <div class="settings-option-group" id="input-method-options">
+                    <label class="radio-option active">
+                        <input type="radio" name="input-method" value="onscreen" checked onchange="onInputMethodChange(this.value)">
+                        <span>On-Screen Controls</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="input-method" value="xbox" onchange="onInputMethodChange(this.value)">
+                        <span>Xbox Controller</span>
+                    </label>
+                </div>
+                <small id="gamepad-status" style="color: rgba(255,255,255,0.6);">No gamepad detected.</small>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
         // WebSocket connection
@@ -397,6 +538,288 @@
         const MOTOR_COMMAND_INTERVAL = 60; // ms
         const SPEED_CURVE_EXPONENT = 2.4;
         const SPEED_DEAD_ZONE = 8;
+        const GAMEPAD_DEAD_ZONE = 0.18;
+
+        const inputState = {
+            method: 'onscreen',
+            gamepadIndex: null,
+            pollHandle: null,
+            lastLeft: 0,
+            lastRight: 0,
+            gamepadConnected: false,
+            gamepadName: ''
+        };
+
+        let settingsVisible = false;
+
+        function toggleSettings(force) {
+            const overlay = document.getElementById('settings-overlay');
+            const button = document.getElementById('settings-btn');
+            if (!overlay) return;
+
+            let show;
+            if (typeof force === 'boolean') {
+                show = force;
+            } else {
+                show = overlay.classList.contains('hidden');
+            }
+
+            overlay.classList.toggle('hidden', !show);
+            settingsVisible = show;
+
+            if (button) {
+                button.classList.toggle('active', show);
+            }
+        }
+
+        function closeSettingsIfOpen() {
+            if (settingsVisible) {
+                toggleSettings(false);
+            }
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeSettingsIfOpen();
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!settingsVisible) return;
+            const overlay = document.getElementById('settings-overlay');
+            const panel = document.getElementById('settings-panel');
+            if (!overlay || !panel) return;
+            const button = document.getElementById('settings-btn');
+            if (panel.contains(event.target) || (button && button.contains(event.target))) {
+                return;
+            }
+            toggleSettings(false);
+        });
+
+        function onInputMethodChange(value) {
+            setInputMethod(value);
+        }
+
+        function updateInputMethodUI() {
+            const options = document.querySelectorAll('#input-method-options .radio-option');
+            options.forEach((option) => {
+                const input = option.querySelector('input[type="radio"]');
+                if (!input) return;
+                const isActive = input.value === inputState.method;
+                if (input.checked !== isActive) {
+                    input.checked = isActive;
+                }
+                option.classList.toggle('active', isActive);
+            });
+        }
+
+        function updateGamepadStatus(text, connected = false) {
+            const statusEl = document.getElementById('gamepad-status');
+            if (statusEl) {
+                statusEl.textContent = text;
+            }
+            inputState.gamepadConnected = connected;
+        }
+
+        function getActiveGamepad() {
+            if (!navigator.getGamepads) return null;
+            const pads = navigator.getGamepads();
+            if (!pads) return null;
+            if (inputState.gamepadIndex !== null && pads[inputState.gamepadIndex]) {
+                return pads[inputState.gamepadIndex];
+            }
+            for (const pad of pads) {
+                if (pad) {
+                    inputState.gamepadIndex = pad.index;
+                    return pad;
+                }
+            }
+            return null;
+        }
+
+        function stopGamepadPolling() {
+            if (inputState.pollHandle) {
+                cancelAnimationFrame(inputState.pollHandle);
+                inputState.pollHandle = null;
+            }
+            inputState.lastLeft = 0;
+            inputState.lastRight = 0;
+            inputState.gamepadIndex = null;
+        }
+
+        function applyGamepadDeadZone(value) {
+            if (Math.abs(value) < GAMEPAD_DEAD_ZONE) {
+                return 0;
+            }
+            return Math.max(-1, Math.min(1, value));
+        }
+
+        function getGamepadAxis(gamepad, primaryIndex, fallbackIndex = null) {
+            if (!gamepad || !gamepad.axes) return 0;
+            const primary = gamepad.axes[primaryIndex];
+            if (typeof primary === 'number' && Number.isFinite(primary)) {
+                return primary;
+            }
+            if (fallbackIndex !== null) {
+                const fallback = gamepad.axes[fallbackIndex];
+                if (typeof fallback === 'number' && Number.isFinite(fallback)) {
+                    return fallback;
+                }
+            }
+            return 0;
+        }
+
+        function applySpeedCurve(value) {
+            return Math.sign(value) * Math.pow(Math.abs(value), SPEED_CURVE_EXPONENT);
+        }
+
+        function processGamepadInput(gamepad) {
+            if (!gamepad) {
+                if (inputState.lastLeft !== 0 || inputState.lastRight !== 0) {
+                    inputState.lastLeft = 0;
+                    inputState.lastRight = 0;
+                    setControlValues(0, 0, true);
+                }
+                return;
+            }
+
+            let leftPercent = 0;
+            let rightPercent = 0;
+
+            if (controlState.mode === 'joystick') {
+                const rawForward = -applyGamepadDeadZone(getGamepadAxis(gamepad, 1));
+                const rawTurn = applyGamepadDeadZone(getGamepadAxis(gamepad, 0));
+                let left = rawForward + rawTurn;
+                let right = rawForward - rawTurn;
+                const maxMagnitude = Math.max(1, Math.max(Math.abs(left), Math.abs(right)));
+                left = applySpeedCurve(left / maxMagnitude);
+                right = applySpeedCurve(right / maxMagnitude);
+                leftPercent = Math.round(left * 100);
+                rightPercent = Math.round(right * 100);
+            } else {
+                const leftRaw = -applyGamepadDeadZone(getGamepadAxis(gamepad, 1));
+                const rightRaw = -applyGamepadDeadZone(getGamepadAxis(gamepad, 3, 5));
+                leftPercent = Math.round(applySpeedCurve(leftRaw) * 100);
+                rightPercent = Math.round(applySpeedCurve(rightRaw) * 100);
+            }
+
+            if (Math.abs(leftPercent) < SPEED_DEAD_ZONE) leftPercent = 0;
+            if (Math.abs(rightPercent) < SPEED_DEAD_ZONE) rightPercent = 0;
+
+            if (leftPercent !== inputState.lastLeft || rightPercent !== inputState.lastRight) {
+                inputState.lastLeft = leftPercent;
+                inputState.lastRight = rightPercent;
+                setControlValues(leftPercent, rightPercent);
+            }
+        }
+
+        function pollGamepad() {
+            if (inputState.method !== 'xbox') {
+                stopGamepadPolling();
+                return;
+            }
+
+            const gamepad = getActiveGamepad();
+            if (gamepad) {
+                if (!inputState.gamepadConnected || inputState.gamepadName !== gamepad.id) {
+                    inputState.gamepadName = gamepad.id;
+                    updateGamepadStatus(`Connected: ${gamepad.id}`, true);
+                }
+                processGamepadInput(gamepad);
+            } else {
+                if (inputState.gamepadConnected) {
+                    updateGamepadStatus('Gamepad disconnected.', false);
+                }
+                processGamepadInput(null);
+            }
+
+            inputState.pollHandle = requestAnimationFrame(pollGamepad);
+        }
+
+        function startGamepadPolling() {
+            if (inputState.pollHandle) return;
+            pollGamepad();
+        }
+
+        function setInputMethod(method) {
+            if (method !== 'onscreen' && method !== 'xbox') {
+                method = 'onscreen';
+            }
+
+            if (inputState.method === method) {
+                updateInputMethodUI();
+                refreshControlVisibility();
+                return;
+            }
+
+            inputState.method = method;
+            updateInputMethodUI();
+
+            if (method === 'xbox') {
+                if (!navigator.getGamepads) {
+                    updateGamepadStatus('Gamepad API not supported in this browser.', false);
+                    stopGamepadPolling();
+                } else {
+                    if (inputState.gamepadConnected && inputState.gamepadName) {
+                        updateGamepadStatus(`Connected: ${inputState.gamepadName}`, true);
+                    } else {
+                        updateGamepadStatus('Waiting for Xbox controller...', false);
+                    }
+                    startGamepadPolling();
+                }
+                if (joystickControl) joystickControl.cancel();
+                if (leftSlider) leftSlider.cancel();
+                if (rightSlider) rightSlider.cancel();
+                setControlValues(0, 0, true);
+            } else {
+                updateGamepadStatus('No gamepad detected.', false);
+                stopGamepadPolling();
+                setControlValues(0, 0, true);
+            }
+
+            refreshControlVisibility();
+        }
+
+        function refreshControlVisibility() {
+            const tankControls = document.getElementById('tank-controls');
+            const joystickControls = document.getElementById('joystick-control');
+
+            if (!tankControls || !joystickControls) return;
+
+            if (inputState.method === 'xbox') {
+                tankControls.classList.add('hidden');
+                joystickControls.classList.add('hidden');
+                return;
+            }
+
+            if (controlState.mode === 'joystick') {
+                tankControls.classList.add('hidden');
+                joystickControls.classList.remove('hidden');
+            } else {
+                tankControls.classList.remove('hidden');
+                joystickControls.classList.add('hidden');
+            }
+        }
+
+        window.addEventListener('gamepadconnected', (event) => {
+            inputState.gamepadIndex = event.gamepad.index;
+            inputState.gamepadName = event.gamepad.id;
+            updateGamepadStatus(`Connected: ${event.gamepad.id}`, true);
+            if (inputState.method === 'xbox') {
+                startGamepadPolling();
+            }
+        });
+
+        window.addEventListener('gamepaddisconnected', (event) => {
+            if (event.gamepad.index === inputState.gamepadIndex) {
+                inputState.gamepadIndex = null;
+                inputState.gamepadName = '';
+            }
+            updateGamepadStatus('Gamepad disconnected.', false);
+            if (inputState.method === 'xbox') {
+                processGamepadInput(null);
+            }
+        });
 
         socket.on('connect', () => {
             document.getElementById('connection-status').textContent = 'Connected';
@@ -569,22 +992,10 @@
 
             controlState.mode = mode;
 
-            const tankControls = document.getElementById('tank-controls');
-            const joystickControls = document.getElementById('joystick-control');
             const toggleInput = document.getElementById('control-toggle');
 
             if (toggleInput && toggleInput.checked !== (mode === 'joystick')) {
                 toggleInput.checked = mode === 'joystick';
-            }
-
-            if (tankControls && joystickControls) {
-                if (mode === 'joystick') {
-                    tankControls.classList.add('hidden');
-                    joystickControls.classList.remove('hidden');
-                } else {
-                    tankControls.classList.remove('hidden');
-                    joystickControls.classList.add('hidden');
-                }
             }
 
             if (joystickControl) joystickControl.cancel();
@@ -592,6 +1003,7 @@
             if (rightSlider) rightSlider.cancel();
 
             setControlValues(0, 0, true);
+            refreshControlVisibility();
         }
 
         class MotorSlider {
@@ -611,7 +1023,7 @@
             }
 
             startDrag(e) {
-                if (controlState.mode !== 'tank') return;
+                if (controlState.mode !== 'tank' || inputState.method !== 'onscreen') return;
                 e.preventDefault();
                 this.dragging = true;
                 this.pointerId = e.pointerId;
@@ -703,7 +1115,7 @@
             }
 
             start(e) {
-                if (controlState.mode !== 'joystick') return;
+                if (controlState.mode !== 'joystick' || inputState.method !== 'onscreen') return;
                 e.preventDefault();
                 this.active = true;
                 this.pointerId = e.pointerId;
@@ -739,7 +1151,7 @@
             }
 
             updateFromEvent(e) {
-                if (controlState.mode !== 'joystick') return;
+                if (controlState.mode !== 'joystick' || inputState.method !== 'onscreen') return;
                 const rect = this.base.getBoundingClientRect();
                 const radius = rect.width / 2;
                 if (radius <= 0) return;
@@ -800,6 +1212,10 @@
             document.getElementById('joystick-base'),
             document.getElementById('joystick-thumb')
         );
+
+        refreshControlVisibility();
+        updateInputMethodUI();
+        updateGamepadStatus('No gamepad detected.', false);
 
         function emergencyStop() {
             socket.emit('emergency_stop');
