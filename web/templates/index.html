@@ -539,6 +539,7 @@
         const SPEED_CURVE_EXPONENT = 2.4;
         const SPEED_DEAD_ZONE = 8;
         const GAMEPAD_DEAD_ZONE = 0.18;
+        const JOYSTICK_TURN_SENSITIVITY = 0.65;
 
         const inputState = {
             method: 'onscreen',
@@ -708,7 +709,7 @@
 
             if (controlState.mode === 'joystick') {
                 const rawForward = -applyGamepadDeadZone(getGamepadAxis(gamepad, 1));
-                const rawTurn = applyGamepadDeadZone(getGamepadAxis(gamepad, 0));
+                const rawTurn = applyGamepadDeadZone(getGamepadAxis(gamepad, 0)) * JOYSTICK_TURN_SENSITIVITY;
                 let left = rawForward + rawTurn;
                 let right = rawForward - rawTurn;
                 const maxMagnitude = Math.max(1, Math.max(Math.abs(left), Math.abs(right)));
@@ -1195,7 +1196,7 @@
                 const normalizedY = -offsetY / radius;
 
                 let forward = normalizedY;
-                let turn = normalizedX;
+                let turn = normalizedX * JOYSTICK_TURN_SENSITIVITY;
 
                 let left = forward + turn;
                 let right = forward - turn;
