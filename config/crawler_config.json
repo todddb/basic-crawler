@@ -41,6 +41,7 @@
     "counts_per_revolution": 44,
     "gear_ratio": 90,
     "wheel_diameter_in": 2.6,
+    "distance_scale": 3.37,
     "track_width_in": 7.5,
     "max_path_points": 800,
     "reset_register": "0x3A",
