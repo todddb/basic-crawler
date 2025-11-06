@@ -517,6 +517,10 @@
                         <span>On-Screen Controls</span>
                     </label>
                     <label class="radio-option">
+                        <input type="radio" name="input-method" value="keyboard" onchange="onInputMethodChange(this.value)">
+                        <span>Keyboard</span>
+                    </label>
+                    <label class="radio-option">
                         <input type="radio" name="input-method" value="xbox" onchange="onInputMethodChange(this.value)">
                         <span>Xbox Controller</span>
                     </label>
@@ -551,6 +555,17 @@
             gamepadName: ''
         };
 
+        const keyboardState = {
+            keys: new Set(),
+            lastLeft: 0,
+            lastRight: 0
+        };
+
+        const KEYBOARD_CONTROL_CODES = new Set([
+            'KeyW', 'KeyS', 'ArrowUp', 'ArrowDown',
+            'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'
+        ]);
+
         let settingsVisible = false;
 
         function toggleSettings(force) {
@@ -579,10 +594,22 @@
             }
         }
 
+        function isFormElement(target) {
+            if (!target) return false;
+            if (target.isContentEditable) return true;
+            const tag = target.tagName;
+            return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+        }
+
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 closeSettingsIfOpen();
             }
+            handleKeyboardEvent(event, true);
+        });
+
+        document.addEventListener('keyup', (event) => {
+            handleKeyboardEvent(event, false);
         });
 
         document.addEventListener('click', (event) => {
@@ -763,14 +790,21 @@
         }
 
         function setInputMethod(method) {
-            if (method !== 'onscreen' && method !== 'xbox') {
+            if (method !== 'onscreen' && method !== 'xbox' && method !== 'keyboard') {
                 method = 'onscreen';
             }
 
             if (inputState.method === method) {
                 updateInputMethodUI();
                 refreshControlVisibility();
+                if (method === 'keyboard') {
+                    updateKeyboardControl();
+                }
                 return;
+            }
+
+            if (inputState.method === 'keyboard' && method !== 'keyboard') {
+                resetKeyboardState();
             }
 
             inputState.method = method;
@@ -796,6 +830,17 @@
                 if (leftSlider) leftSlider.cancel();
                 if (rightSlider) rightSlider.cancel();
                 setControlValues(0, 0, true);
+            } else if (method === 'keyboard') {
+                stopGamepadPolling();
+                updateGamepadStatus('Keyboard input active. Use WASD or arrow keys.', false);
+                if (joystickControl) joystickControl.cancel();
+                if (leftSlider) leftSlider.cancel();
+                if (rightSlider) rightSlider.cancel();
+                keyboardState.keys.clear();
+                keyboardState.lastLeft = 0;
+                keyboardState.lastRight = 0;
+                setControlValues(0, 0, true);
+                updateKeyboardControl();
             } else {
                 updateGamepadStatus('No gamepad detected.', false);
                 stopGamepadPolling();
@@ -803,6 +848,106 @@
             }
 
             refreshControlVisibility();
+        }
+
+        function resetKeyboardState() {
+            keyboardState.keys.clear();
+            if (keyboardState.lastLeft !== 0 || keyboardState.lastRight !== 0) {
+                keyboardState.lastLeft = 0;
+                keyboardState.lastRight = 0;
+                setControlValues(0, 0, true);
+            }
+        }
+
+        function handleKeyboardEvent(event, isKeyDown) {
+            if (inputState.method !== 'keyboard') return;
+            if (isFormElement(event.target)) return;
+
+            if (!KEYBOARD_CONTROL_CODES.has(event.code)) {
+                return;
+            }
+
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
+                event.preventDefault();
+            }
+
+            if (isKeyDown) {
+                if (!event.repeat) {
+                    keyboardState.keys.add(event.code);
+                    updateKeyboardControl();
+                }
+            } else {
+                if (keyboardState.keys.delete(event.code)) {
+                    updateKeyboardControl();
+                }
+            }
+        }
+
+        function updateKeyboardControl() {
+            if (inputState.method !== 'keyboard') return;
+
+            let leftPercent = 0;
+            let rightPercent = 0;
+
+            if (controlState.mode === 'tank') {
+                const leftForward = keyboardState.keys.has('KeyW');
+                const leftReverse = keyboardState.keys.has('KeyS');
+                const rightForward = keyboardState.keys.has('ArrowUp');
+                const rightReverse = keyboardState.keys.has('ArrowDown');
+
+                if (leftForward && !leftReverse) {
+                    leftPercent = 100;
+                } else if (leftReverse && !leftForward) {
+                    leftPercent = -100;
+                }
+
+                if (rightForward && !rightReverse) {
+                    rightPercent = 100;
+                } else if (rightReverse && !rightForward) {
+                    rightPercent = -100;
+                }
+            } else {
+                let forward = 0;
+                let turn = 0;
+
+                const forwardKeys = keyboardState.keys.has('KeyW') || keyboardState.keys.has('ArrowUp');
+                const backwardKeys = keyboardState.keys.has('KeyS') || keyboardState.keys.has('ArrowDown');
+                const turnLeftKeys = keyboardState.keys.has('KeyA') || keyboardState.keys.has('ArrowLeft');
+                const turnRightKeys = keyboardState.keys.has('KeyD') || keyboardState.keys.has('ArrowRight');
+
+                if (forwardKeys && !backwardKeys) {
+                    forward = 1;
+                } else if (backwardKeys && !forwardKeys) {
+                    forward = -1;
+                }
+
+                if (turnRightKeys && !turnLeftKeys) {
+                    turn = 1;
+                } else if (turnLeftKeys && !turnRightKeys) {
+                    turn = -1;
+                }
+
+                turn *= JOYSTICK_TURN_SENSITIVITY;
+
+                let left = forward + turn;
+                let right = forward - turn;
+
+                const maxMagnitude = Math.max(1, Math.max(Math.abs(left), Math.abs(right)));
+                left = applySpeedCurve(left / maxMagnitude);
+                right = applySpeedCurve(right / maxMagnitude);
+
+                leftPercent = Math.round(left * 100);
+                rightPercent = Math.round(right * 100);
+
+                if (Math.abs(leftPercent) < SPEED_DEAD_ZONE) leftPercent = 0;
+                if (Math.abs(rightPercent) < SPEED_DEAD_ZONE) rightPercent = 0;
+            }
+
+            if (leftPercent !== keyboardState.lastLeft || rightPercent !== keyboardState.lastRight) {
+                keyboardState.lastLeft = leftPercent;
+                keyboardState.lastRight = rightPercent;
+                setControlValues(leftPercent, rightPercent, true);
+            }
         }
 
         function refreshControlVisibility() {
@@ -1028,6 +1173,11 @@
             if (rightSlider) rightSlider.cancel();
 
             setControlValues(0, 0, true);
+            if (inputState.method === 'keyboard') {
+                keyboardState.lastLeft = 0;
+                keyboardState.lastRight = 0;
+                updateKeyboardControl();
+            }
             refreshControlVisibility();
         }
 
