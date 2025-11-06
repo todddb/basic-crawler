@@ -689,7 +689,7 @@
                 <label for="quality-select">Video Quality</label>
                 <select id="quality-select" onchange="changeStreamQuality(this.value)">
                     <option value="balanced">Balanced</option>
-                    <option value="low">Low Lag</option>
+                    <option value="low" selected>Low Lag</option>
                     <option value="high">High Detail</option>
                 </select>
             </div>
@@ -700,7 +700,7 @@
                     <div class="toggle-container" title="Toggle control scheme">
                         <span>Tank</span>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="control-toggle" onchange="onControlToggle(this.checked)">
+                            <input type="checkbox" id="control-toggle" checked onchange="onControlToggle(this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
                         <span>Joystick</span>
@@ -1369,7 +1369,7 @@
 
             if (!tankControls || !joystickControls) return;
 
-            if (inputState.method === 'xbox') {
+            if (inputState.method === 'xbox' || inputState.method === 'keyboard') {
                 tankControls.classList.add('hidden');
                 joystickControls.classList.add('hidden');
                 return;
@@ -1384,12 +1384,43 @@
             }
         }
 
+        function applyDefaultInputMethod() {
+            if (!navigator.getGamepads) {
+                updateGamepadStatus('No gamepad detected.', false);
+                if (inputState.method !== 'onscreen') {
+                    setInputMethod('onscreen');
+                }
+                return;
+            }
+
+            const pad = getActiveGamepad();
+            if (pad) {
+                inputState.gamepadName = pad.id;
+                updateGamepadStatus(`Connected: ${pad.id}`, true);
+                if (inputState.method !== 'xbox') {
+                    setInputMethod('xbox');
+                } else {
+                    startGamepadPolling();
+                }
+            } else {
+                updateGamepadStatus('No gamepad detected.', false);
+                if (inputState.method !== 'onscreen') {
+                    setInputMethod('onscreen');
+                }
+            }
+        }
+
         window.addEventListener('gamepadconnected', (event) => {
             inputState.gamepadIndex = event.gamepad.index;
             inputState.gamepadName = event.gamepad.id;
             updateGamepadStatus(`Connected: ${event.gamepad.id}`, true);
+            if (inputState.method === 'keyboard') {
+                return;
+            }
             if (inputState.method === 'xbox') {
                 startGamepadPolling();
+            } else {
+                setInputMethod('xbox');
             }
         });
 
@@ -1398,9 +1429,19 @@
                 inputState.gamepadIndex = null;
                 inputState.gamepadName = '';
             }
-            updateGamepadStatus('Gamepad disconnected.', false);
-            if (inputState.method === 'xbox') {
-                processGamepadInput(null);
+            const replacement = getActiveGamepad();
+            if (replacement) {
+                inputState.gamepadIndex = replacement.index ?? inputState.gamepadIndex;
+                inputState.gamepadName = replacement.id;
+                updateGamepadStatus(`Connected: ${replacement.id}`, true);
+                if (inputState.method === 'xbox') {
+                    startGamepadPolling();
+                }
+            } else {
+                updateGamepadStatus('Gamepad disconnected.', false);
+                if (inputState.method === 'xbox') {
+                    setInputMethod('onscreen');
+                }
             }
         });
 
@@ -1523,7 +1564,7 @@
         
         // Motor control
         const controlState = {
-            mode: 'tank',
+            mode: 'joystick',
             left: 0,
             right: 0
         };
@@ -1815,9 +1856,10 @@
             document.getElementById('joystick-thumb')
         );
 
+        setControlMode(controlState.mode);
         refreshControlVisibility();
         updateInputMethodUI();
-        updateGamepadStatus('No gamepad detected.', false);
+        applyDefaultInputMethod();
 
         function emergencyStop() {
             socket.emit('emergency_stop');
