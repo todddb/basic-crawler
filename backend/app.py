@@ -31,21 +31,47 @@ config_manager = None
 camera_manager = None
 hardware_manager = None
 logger = None
+telemetry_thread_started = False
 
 def initialize_systems():
     """Initialize all subsystems"""
     global config_manager, camera_manager, hardware_manager, logger
-    
+
     config_manager = ConfigManager()
     config = config_manager.get_config()
-    
+
     logger = setup_logging(config.get("system", {}).get("log_level", "INFO"))
     logger.info("Starting Crawler Robot Control System...")
     
     hardware_manager = HardwareManager(config)
     camera_manager = CameraManager(config)
-    
+
     logger.info("All systems initialized")
+    start_background_tasks()
+
+
+def start_background_tasks():
+    global telemetry_thread_started
+
+    if telemetry_thread_started:
+        return
+
+    telemetry_thread_started = True
+
+    def telemetry_loop():
+        socketio.sleep(1)
+        while True:
+            try:
+                if hardware_manager:
+                    telemetry = hardware_manager.get_telemetry()
+                    if telemetry:
+                        socketio.emit("telemetry", telemetry)
+            except Exception:
+                if logger:
+                    logger.exception("Telemetry loop failed")
+            socketio.sleep(0.5)
+
+    socketio.start_background_task(telemetry_loop)
 
 # Routes
 @app.route("/")
@@ -118,6 +144,8 @@ def video_feed(camera):
 def ws_connect():
     logger.info(f"Client connected: {request.sid}")
     emit("connected", {"message": "Connected to crawler"})
+    if hardware_manager:
+        emit("telemetry", hardware_manager.get_telemetry())
 
 @socketio.on("disconnect")
 def ws_disconnect():
@@ -136,6 +164,20 @@ def ws_emergency_stop():
     if hardware_manager:
         hardware_manager.emergency_stop()
     emit("stopped", {"message": "Emergency stop activated"})
+
+
+@socketio.on("reset_odometry")
+def ws_reset_odometry():
+    if not hardware_manager:
+        emit("odometry_reset", {"success": False, "error": "Hardware manager unavailable"})
+        return
+
+    hardware_manager.reset_odometry()
+    emit(
+        "odometry_reset",
+        {"success": True, "sequence": hardware_manager.odometry_sequence},
+    )
+    socketio.emit("telemetry", hardware_manager.get_telemetry())
 
 def cleanup():
     """Cleanup on shutdown"""
