@@ -86,12 +86,16 @@ class HardwareManager:
         counts_per_rev = float(self.encoder_config.get("counts_per_revolution", 0) or 0)
         gear_ratio = float(self.encoder_config.get("gear_ratio", 1.0) or 1.0)
         wheel_diameter_in = float(self.encoder_config.get("wheel_diameter_in", 0) or 0)
+        distance_scale = float(self.encoder_config.get("distance_scale", 1.0) or 1.0)
         self.track_width_in = float(self.encoder_config.get("track_width_in", 0) or 0)
         self.distance_per_tick_in = 0.0
         if counts_per_rev > 0 and wheel_diameter_in > 0 and gear_ratio > 0:
             effective_counts = counts_per_rev * gear_ratio
             circumference = math.pi * wheel_diameter_in
             self.distance_per_tick_in = circumference / effective_counts
+
+        if distance_scale > 0:
+            self.distance_per_tick_in *= distance_scale
 
         max_path_points = int(self.encoder_config.get("max_path_points", 600) or 600)
         self.path_points = deque(maxlen=max(2, max_path_points))

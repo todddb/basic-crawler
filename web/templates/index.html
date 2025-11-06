@@ -882,10 +882,12 @@
 
             for (const pt of points) {
                 if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
-                if (pt.x < minX) minX = pt.x;
-                if (pt.x > maxX) maxX = pt.x;
-                if (pt.y < minY) minY = pt.y;
-                if (pt.y > maxY) maxY = pt.y;
+                const plotX = pt.y;
+                const plotY = pt.x;
+                if (plotX < minX) minX = plotX;
+                if (plotX > maxX) maxX = plotX;
+                if (plotY < minY) minY = plotY;
+                if (plotY > maxY) maxY = plotY;
             }
 
             if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
@@ -911,10 +913,14 @@
             const offsetX = (displayWidth - spanX * scale) / 2;
             const offsetY = (displayHeight - spanY * scale) / 2;
 
-            const project = (pt) => ({
-                x: (pt.x - minX) * scale + offsetX,
-                y: displayHeight - ((pt.y - minY) * scale + offsetY),
-            });
+            const project = (pt) => {
+                const plotX = pt.y;
+                const plotY = pt.x;
+                return {
+                    x: (plotX - minX) * scale + offsetX,
+                    y: displayHeight - ((plotY - minY) * scale + offsetY),
+                };
+            };
 
             odometryCtx.strokeStyle = 'rgba(76, 175, 80, 0.9)';
             odometryCtx.lineWidth = 2;
