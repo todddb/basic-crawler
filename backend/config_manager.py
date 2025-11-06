@@ -47,26 +47,30 @@ class ConfigManager:
                 "right_channel": 3,
             },
             "battery": {
-                "voltage_register": "0x2A",
-                "voltage_scale": 0.01,
-                "divider_ratio": 2.0,
+                "voltage_register": "0x00",
+                "voltage_scale": 0.001,
+                "divider_ratio": 1.0,
                 "cells": 3,
                 "warn_cell_voltage": 3.5,
                 "critical_cell_voltage": 3.3,
                 "full_voltage": 12.6,
                 "empty_voltage": 9.9,
-                "ema_alpha": 0.3
+                "ema_alpha": 0.2
             },
             "encoders": {
-                "left_register": "0x40",
-                "right_register": "0x44",
-                "reset_register": "0x50",
+                "total_register": "0x3C",
+                "total_count": 4,
+                "left_indices": [0, 2],
+                "right_indices": [1, 3],
+                "left_register": None,
+                "right_register": None,
+                "reset_register": "0x3A",
                 "reset_value": 1,
-                "counts_per_revolution": 1024,
-                "wheel_diameter_in": 2.64,
+                "counts_per_revolution": 44,
+                "wheel_diameter_in": 2.6,
                 "track_width_in": 7.5,
-                "gear_ratio": 1.0,
-                "max_path_points": 600
+                "gear_ratio": 90.0,
+                "max_path_points": 800
             },
             "lighting": {
                 "led_bar": {

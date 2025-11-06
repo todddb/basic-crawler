@@ -62,11 +62,26 @@ class HardwareManager:
         self.right_encoder_register = self._parse_register(
             self.encoder_config.get("right_register")
         )
+        self.encoder_total_register = self._parse_register(
+            self.encoder_config.get("total_register")
+        )
         self.encoder_reset_register = self._parse_register(
             self.encoder_config.get("reset_register")
         )
         reset_value = self._parse_register(self.encoder_config.get("reset_value"))
         self.encoder_reset_value = reset_value if reset_value is not None else 0
+
+        self.encoder_left_indices = self._parse_index_list(
+            self.encoder_config.get("left_indices")
+        )
+        self.encoder_right_indices = self._parse_index_list(
+            self.encoder_config.get("right_indices")
+        )
+        self.encoder_total_count = int(
+            self.encoder_config.get("total_count")
+            or self._infer_total_count(self.encoder_left_indices, self.encoder_right_indices)
+            or 0
+        )
 
         counts_per_rev = float(self.encoder_config.get("counts_per_revolution", 0) or 0)
         gear_ratio = float(self.encoder_config.get("gear_ratio", 1.0) or 1.0)
@@ -87,10 +102,20 @@ class HardwareManager:
         self.odometry_sequence = 0
 
         self.odometry_enabled = (
-            self.left_encoder_register is not None
-            and self.right_encoder_register is not None
-            and self.distance_per_tick_in > 0
+            self.distance_per_tick_in > 0
             and self.track_width_in > 0
+            and (
+                (
+                    self.left_encoder_register is not None
+                    and self.right_encoder_register is not None
+                )
+                or (
+                    self.encoder_total_register is not None
+                    and self.encoder_total_count >= 2
+                    and self.encoder_left_indices
+                    and self.encoder_right_indices
+                )
+            )
         )
 
         self._initialize_hardware()
@@ -120,6 +145,31 @@ class HardwareManager:
         except (TypeError, ValueError):
             logger.warning("Invalid register value %r", value)
             return None
+
+    def _parse_index_list(self, value):
+        if value is None:
+            return []
+        if isinstance(value, int):
+            return [value]
+        if isinstance(value, (list, tuple)):
+            indices = []
+            for item in value:
+                try:
+                    indices.append(int(item))
+                except (TypeError, ValueError):
+                    logger.warning("Invalid encoder index %r", item)
+            return indices
+        try:
+            return [int(value)]
+        except (TypeError, ValueError):
+            logger.warning("Invalid encoder index value %r", value)
+            return []
+
+    def _infer_total_count(self, left_indices, right_indices):
+        if not left_indices and not right_indices:
+            return 0
+        highest = max(left_indices + right_indices)
+        return highest + 1
 
     def _compute_motor_register(self, channel, label):
         try:
@@ -207,7 +257,7 @@ class HardwareManager:
 
         try:
             data = self.bus.read_i2c_block_data(self.i2c_address, self.battery_register, 2)
-            raw = (data[0] << 8) | data[1]
+            raw = data[0] | (data[1] << 8)
             voltage = raw * self.battery_scale
             if self.battery_divider > 0:
                 voltage *= self.battery_divider
@@ -259,12 +309,57 @@ class HardwareManager:
         if self.bus is None:
             return None
 
-        if self.left_encoder_register is None or self.right_encoder_register is None:
-            return None
-
         try:
-            left_bytes = self.bus.read_i2c_block_data(self.i2c_address, self.left_encoder_register, 4)
-            right_bytes = self.bus.read_i2c_block_data(self.i2c_address, self.right_encoder_register, 4)
+            if (
+                self.encoder_total_register is not None
+                and self.encoder_total_count >= 2
+                and (self.encoder_left_indices or self.encoder_right_indices)
+            ):
+                length = max(self.encoder_total_count * 4, 8)
+                data = self.bus.read_i2c_block_data(
+                    self.i2c_address, self.encoder_total_register, length
+                )
+                needed = self.encoder_total_count * 4
+                if len(data) < needed:
+                    logger.warning(
+                        "Encoder block read returned %d bytes; expected %d",
+                        len(data),
+                        needed,
+                    )
+                    return None
+                fmt = "<" + "i" * self.encoder_total_count
+                counts = struct.unpack(fmt, bytes(data[:needed]))
+                left_values = [
+                    counts[i]
+                    for i in self.encoder_left_indices
+                    if 0 <= i < len(counts)
+                ]
+                right_values = [
+                    counts[i]
+                    for i in self.encoder_right_indices
+                    if 0 <= i < len(counts)
+                ]
+                left = (
+                    int(round(sum(left_values) / len(left_values)))
+                    if left_values
+                    else 0
+                )
+                right = (
+                    int(round(sum(right_values) / len(right_values)))
+                    if right_values
+                    else 0
+                )
+                return {"left": left, "right": right}
+
+            if self.left_encoder_register is None or self.right_encoder_register is None:
+                return None
+
+            left_bytes = self.bus.read_i2c_block_data(
+                self.i2c_address, self.left_encoder_register, 4
+            )
+            right_bytes = self.bus.read_i2c_block_data(
+                self.i2c_address, self.right_encoder_register, 4
+            )
             left = struct.unpack("<i", bytes(left_bytes))[0]
             right = struct.unpack("<i", bytes(right_bytes))[0]
             return {"left": left, "right": right}
