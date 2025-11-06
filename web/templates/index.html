@@ -219,7 +219,12 @@
             padding: 6px 12px;
             font-size: 12px;
         }
-        
+
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
         .btn:hover { background: #555; }
         .btn.active { background: #4CAF50; }
         .btn.emergency { background: #d32f2f; }
@@ -530,6 +535,13 @@
             gap: 2px;
         }
 
+        .odometry-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: flex-end;
+        }
+
         .odometry-label {
             font-size: 11px;
             text-transform: uppercase;
@@ -674,7 +686,12 @@
                 <div class="odometry-label">Distance</div>
                 <div id="odometry-distance">0.0 ft</div>
             </div>
-            <button id="odometry-reset" class="btn small" type="button">Reset</button>
+            <div class="odometry-actions">
+                <button id="odometry-reset" class="btn small" type="button">Reset</button>
+                <button id="odometry-return" class="btn small" type="button" disabled>
+                    Return to start
+                </button>
+            </div>
         </div>
     </div>
 
@@ -749,10 +766,20 @@
             sequence: 0,
             totalDistance: 0,
             resetPending: false,
+            returnAvailable: false,
+            returnInProgress: false,
         };
 
         const odometryCanvas = document.getElementById('odometry-canvas');
         const odometryCtx = odometryCanvas ? odometryCanvas.getContext('2d') : null;
+
+        const odometryReturnButton = document.getElementById('odometry-return');
+        const RETURN_BUTTON_LABEL = 'Return to start';
+        if (odometryReturnButton) {
+            odometryReturnButton.textContent = RETURN_BUTTON_LABEL;
+            odometryReturnButton.dataset.defaultLabel = RETURN_BUTTON_LABEL;
+            odometryReturnButton.disabled = true;
+        }
 
         const inputState = {
             method: 'onscreen',
@@ -834,6 +861,26 @@
             } else {
                 distanceEl.textContent = '--';
             }
+        }
+
+        function updateReturnButtonFromOdometry(odometry) {
+            if (!odometryReturnButton) return;
+            const inProgress = Boolean(odometry && odometry.return_in_progress);
+            const available = Boolean(odometry && odometry.return_available);
+            const defaultLabel = odometryReturnButton.dataset.defaultLabel || RETURN_BUTTON_LABEL;
+
+            if (inProgress) {
+                odometryReturnButton.disabled = true;
+                odometryReturnButton.textContent = 'Returning...';
+                return;
+            }
+
+            if (odometryReturnButton.dataset.manualBusy === '1') {
+                return;
+            }
+
+            odometryReturnButton.textContent = defaultLabel;
+            odometryReturnButton.disabled = !available;
         }
 
         function normalizePathPoints(path) {
@@ -957,6 +1004,8 @@
 
             telemetryState.sequence = odometry.sequence ?? telemetryState.sequence;
             telemetryState.path = normalizePathPoints(odometry.path);
+            telemetryState.returnAvailable = Boolean(odometry.return_available);
+            telemetryState.returnInProgress = Boolean(odometry.return_in_progress);
 
             const distance = Number(odometry.total_distance_ft);
             if (Number.isFinite(distance)) {
@@ -965,6 +1014,7 @@
 
             updateDistanceLabel(telemetryState.totalDistance);
             drawOdometryPath();
+            updateReturnButtonFromOdometry(odometry);
         }
 
         const odometryResetButton = document.getElementById('odometry-reset');
@@ -973,11 +1023,32 @@
                 telemetryState.resetPending = true;
                 telemetryState.path = [{ x: 0, y: 0 }];
                 telemetryState.totalDistance = 0;
+                telemetryState.returnAvailable = false;
+                telemetryState.returnInProgress = false;
                 updateDistanceLabel(0);
                 drawOdometryPath();
+                if (odometryReturnButton) {
+                    odometryReturnButton.dataset.manualBusy = '';
+                    odometryReturnButton.textContent =
+                        odometryReturnButton.dataset.defaultLabel || RETURN_BUTTON_LABEL;
+                    odometryReturnButton.disabled = true;
+                }
                 if (socket && socket.connected) {
                     socket.emit('reset_odometry');
                 }
+            });
+        }
+
+        if (odometryReturnButton) {
+            odometryReturnButton.addEventListener('click', () => {
+                if (!socket || !socket.connected) {
+                    return;
+                }
+
+                odometryReturnButton.dataset.manualBusy = '1';
+                odometryReturnButton.disabled = true;
+                odometryReturnButton.textContent = 'Returning...';
+                socket.emit('return_to_start');
             });
         }
 
@@ -1473,6 +1544,48 @@
             if (payload && payload.success && Number.isFinite(payload.sequence)) {
                 telemetryState.sequence = payload.sequence;
             }
+        });
+
+        socket.on('return_to_start_status', (payload) => {
+            if (!odometryReturnButton) return;
+            const defaultLabel = odometryReturnButton.dataset.defaultLabel || RETURN_BUTTON_LABEL;
+
+            if (!payload || !payload.success) {
+                if (payload && payload.message) {
+                    console.warn(payload.message);
+                }
+                odometryReturnButton.dataset.manualBusy = '';
+                odometryReturnButton.textContent = defaultLabel;
+                odometryReturnButton.disabled = !telemetryState.returnAvailable;
+                return;
+            }
+
+            odometryReturnButton.dataset.manualBusy = '1';
+            odometryReturnButton.disabled = true;
+            odometryReturnButton.textContent = 'Returning...';
+        });
+
+        socket.on('return_to_start_complete', (payload) => {
+            if (!odometryReturnButton) return;
+            const defaultLabel = odometryReturnButton.dataset.defaultLabel || RETURN_BUTTON_LABEL;
+            const success = payload && payload.success;
+
+            if (!success && payload && payload.reason) {
+                console.warn(`Return-to-start interrupted: ${payload.reason}`);
+            }
+
+            odometryReturnButton.dataset.manualBusy = '';
+            odometryReturnButton.textContent = defaultLabel;
+            if (success) {
+                odometryReturnButton.disabled = true;
+            } else {
+                odometryReturnButton.disabled = !telemetryState.returnAvailable;
+            }
+
+            updateReturnButtonFromOdometry({
+                return_available: telemetryState.returnAvailable,
+                return_in_progress: telemetryState.returnInProgress,
+            });
         });
 
         // Camera management

@@ -2,6 +2,8 @@
 import logging
 import math
 import struct
+import threading
+import time
 from collections import deque
 
 import psutil
@@ -96,6 +98,13 @@ class HardwareManager:
 
         if distance_scale > 0:
             self.distance_per_tick_in *= distance_scale
+
+        self.motion_log = []
+        self._last_command_time = None
+        self._log_lock = threading.Lock()
+        self._return_lock = threading.Lock()
+        self._return_abort = None
+        self.returning_to_start = False
 
         max_path_points = int(self.encoder_config.get("max_path_points", 600) or 600)
         self.path_points = deque(maxlen=max(2, max_path_points))
@@ -195,13 +204,18 @@ class HardwareManager:
 
         return register & 0xFF
 
-    def set_motor_speed(self, left_speed: int, right_speed: int):
+    def set_motor_speed(self, left_speed: int, right_speed: int, *, source: str = "manual"):
         """
         left_speed/right_speed are -100..100 (percent). Map to your controller format here.
         """
         left_speed = self._clamp(int(left_speed), -self.max_speed, self.max_speed)
         right_speed = self._clamp(int(right_speed), -self.max_speed, self.max_speed)
         self.left_speed, self.right_speed = left_speed, right_speed
+
+        if source != "auto":
+            self._abort_return_to_start()
+
+        self._record_motion_command(left_speed, right_speed, source=source)
 
         # Example mapping: write signed speeds to two registers (adjust to your controller)
         if self.bus is None:
@@ -434,15 +448,19 @@ class HardwareManager:
             "total_distance_ft": self.total_distance_ft,
             "path": list(self.path_points),
             "sequence": self.odometry_sequence,
+            "return_available": self._has_unconsumed_manual_entries(),
+            "return_in_progress": self._is_return_in_progress(),
         }
 
     def reset_odometry(self):
+        self._abort_return_to_start()
         self.last_encoder_counts = None
         self.odometry_pose = {"x": 0.0, "y": 0.0, "heading": 0.0}
         self.total_distance_ft = 0.0
         self.odometry_sequence += 1
         self.path_points.clear()
         self.path_points.append({"x": 0.0, "y": 0.0})
+        self.reset_motion_log()
 
         if self.bus is None or self.encoder_reset_register is None:
             return
@@ -455,6 +473,163 @@ class HardwareManager:
             )
         except Exception:
             logger.exception("Failed to reset encoder counters over I2C")
+
+    def reset_motion_log(self):
+        with self._log_lock:
+            self.motion_log.clear()
+            self._last_command_time = None
+
+    def begin_return_to_start(self, on_complete=None):
+        with self._return_lock:
+            if self.returning_to_start:
+                return False, "Return-to-start already in progress."
+
+            segments = self._collect_return_segments()
+            if not segments:
+                return False, "No recorded motion available to retrace."
+
+            self.returning_to_start = True
+            self._return_abort = threading.Event()
+
+        logger.info("Starting return-to-start sequence (%d segments)", len(segments))
+
+        def worker():
+            result = {"success": True, "reason": "complete"}
+            try:
+                for segment in reversed(segments):
+                    if self._return_abort and self._return_abort.is_set():
+                        result = {"success": False, "reason": "aborted"}
+                        break
+
+                    duration = float(segment["duration"] or 0.0)
+                    if duration <= 0:
+                        continue
+
+                    left = -segment["left"]
+                    right = -segment["right"]
+
+                    if left == 0 and right == 0:
+                        continue
+
+                    self.set_motor_speed(left, right, source="auto")
+
+                    end_time = time.monotonic() + duration
+                    while time.monotonic() < end_time:
+                        if self._return_abort and self._return_abort.is_set():
+                            result = {"success": False, "reason": "aborted"}
+                            break
+                        time.sleep(0.05)
+
+                    if not result.get("success", False):
+                        break
+            except Exception:
+                logger.exception("Return-to-start execution failed")
+                result = {"success": False, "reason": "error"}
+            finally:
+                try:
+                    self.set_motor_speed(0, 0, source="auto")
+                except Exception:
+                    logger.exception("Failed to stop motors after return-to-start")
+
+                if result.get("success"):
+                    with self._log_lock:
+                        for segment in segments:
+                            entry = segment.get("entry")
+                            if entry and entry.get("source") == "manual":
+                                entry["consumed"] = True
+
+                with self._return_lock:
+                    self.returning_to_start = False
+                    self._return_abort = None
+
+                if on_complete:
+                    try:
+                        on_complete(result)
+                    except Exception:
+                        logger.exception("Return-to-start completion callback failed")
+
+            logger.info(
+                "Return-to-start finished: %s", result.get("reason", "unknown")
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+        return True, "Returning to start"
+
+    def _record_motion_command(self, left_speed, right_speed, *, source):
+        now = time.monotonic()
+        with self._log_lock:
+            if self.motion_log and self._last_command_time is not None:
+                elapsed = max(0.0, now - self._last_command_time)
+                self.motion_log[-1]["duration"] += elapsed
+
+            if self.motion_log:
+                last = self.motion_log[-1]
+                if (
+                    last["left"] == left_speed
+                    and last["right"] == right_speed
+                    and last.get("source") == source
+                ):
+                    self._last_command_time = now
+                    return
+
+            entry = {
+                "left": left_speed,
+                "right": right_speed,
+                "duration": 0.0,
+                "source": source,
+            }
+
+            if source == "manual":
+                entry["consumed"] = False
+
+            self.motion_log.append(entry)
+            self._last_command_time = now
+
+    def _collect_return_segments(self):
+        now = time.monotonic()
+        with self._log_lock:
+            if self.motion_log and self._last_command_time is not None:
+                elapsed = max(0.0, now - self._last_command_time)
+                self.motion_log[-1]["duration"] += elapsed
+                self._last_command_time = now
+
+            segments = []
+            for entry in self.motion_log:
+                if entry.get("source") != "manual" or entry.get("consumed"):
+                    continue
+                duration = float(entry.get("duration") or 0.0)
+                if duration <= 0:
+                    continue
+                segments.append(
+                    {
+                        "entry": entry,
+                        "left": entry["left"],
+                        "right": entry["right"],
+                        "duration": duration,
+                    }
+                )
+
+            return segments
+
+    def _has_unconsumed_manual_entries(self):
+        with self._log_lock:
+            for entry in self.motion_log:
+                if (
+                    entry.get("source") == "manual"
+                    and not entry.get("consumed")
+                    and float(entry.get("duration") or 0.0) > 0
+                ):
+                    return True
+        return False
+
+    def _is_return_in_progress(self):
+        with self._return_lock:
+            return self.returning_to_start
+
+    def _abort_return_to_start(self):
+        with self._return_lock:
+            if self._return_abort:
+                self._return_abort.set()
 
     def cleanup(self):
         try:
