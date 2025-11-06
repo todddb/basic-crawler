@@ -73,6 +73,16 @@ def start_background_tasks():
 
     socketio.start_background_task(telemetry_loop)
 
+
+def _return_to_start_complete(result):
+    payload = {
+        "success": bool(result.get("success")) if isinstance(result, dict) else False,
+        "reason": result.get("reason") if isinstance(result, dict) else None,
+    }
+    socketio.emit("return_to_start_complete", payload)
+    if hardware_manager:
+        socketio.emit("telemetry", hardware_manager.get_telemetry())
+
 # Routes
 @app.route("/")
 def index():
@@ -177,6 +187,27 @@ def ws_reset_odometry():
         "odometry_reset",
         {"success": True, "sequence": hardware_manager.odometry_sequence},
     )
+    socketio.emit("telemetry", hardware_manager.get_telemetry())
+
+
+@socketio.on("return_to_start")
+def ws_return_to_start():
+    if not hardware_manager:
+        emit(
+            "return_to_start_status",
+            {"success": False, "message": "Hardware manager unavailable"},
+        )
+        return
+
+    success, message = hardware_manager.begin_return_to_start(
+        on_complete=_return_to_start_complete
+    )
+
+    emit(
+        "return_to_start_status",
+        {"success": success, "message": message, "in_progress": success},
+    )
+
     socketio.emit("telemetry", hardware_manager.get_telemetry())
 
 def cleanup():
