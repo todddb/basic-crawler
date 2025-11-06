@@ -46,6 +46,28 @@ class ConfigManager:
                 "left_channel": 2,
                 "right_channel": 3,
             },
+            "battery": {
+                "voltage_register": "0x2A",
+                "voltage_scale": 0.01,
+                "divider_ratio": 2.0,
+                "cells": 3,
+                "warn_cell_voltage": 3.5,
+                "critical_cell_voltage": 3.3,
+                "full_voltage": 12.6,
+                "empty_voltage": 9.9,
+                "ema_alpha": 0.3
+            },
+            "encoders": {
+                "left_register": "0x40",
+                "right_register": "0x44",
+                "reset_register": "0x50",
+                "reset_value": 1,
+                "counts_per_revolution": 1024,
+                "wheel_diameter_in": 2.64,
+                "track_width_in": 7.5,
+                "gear_ratio": 1.0,
+                "max_path_points": 600
+            },
             "lighting": {
                 "led_bar": {
                     "pin": 12,

@@ -28,6 +28,13 @@
             gap: 12px;
         }
 
+        #header-metrics {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 0 0 auto;
+        }
+
         #header-left {
             display: flex;
             flex-direction: column;
@@ -38,6 +45,90 @@
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        #battery-widget {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 6px 12px;
+            border-radius: 12px;
+            min-width: 140px;
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+
+        #battery-widget[data-state="warning"] {
+            background: rgba(255, 193, 7, 0.18);
+            border-color: rgba(255, 193, 7, 0.38);
+        }
+
+        #battery-widget[data-state="critical"] {
+            background: rgba(244, 67, 54, 0.2);
+            border-color: rgba(244, 67, 54, 0.45);
+        }
+
+        #battery-widget[data-state="unknown"] {
+            opacity: 0.65;
+        }
+
+        .battery-body {
+            position: relative;
+            width: 46px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 5px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.35);
+        }
+
+        .battery-cap {
+            position: absolute;
+            right: -6px;
+            top: 4px;
+            width: 5px;
+            height: 8px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        #battery-level {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 12%;
+            background: #4CAF50;
+            transition: width 0.3s ease, background 0.3s ease;
+        }
+
+        #battery-widget[data-state="warning"] #battery-level {
+            background: #FFC107;
+        }
+
+        #battery-widget[data-state="critical"] #battery-level {
+            background: #F44336;
+        }
+
+        #battery-widget[data-state="unknown"] #battery-level {
+            background: #777;
+        }
+
+        .battery-text {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+        }
+
+        .battery-text span {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .battery-text small {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
         }
 
         #settings-btn {
@@ -122,6 +213,11 @@
             margin: 0 5px;
             border-radius: 5px;
             cursor: pointer;
+        }
+
+        .btn.small {
+            padding: 6px 12px;
+            font-size: 12px;
         }
         
         .btn:hover { background: #555; }
@@ -396,6 +492,86 @@
             border-radius: 5px;
             font-size: 14px;
         }
+
+        #odometry-overlay {
+            position: fixed;
+            bottom: 20px;
+            right: 110px;
+            width: 240px;
+            padding: 14px 16px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+            z-index: 85;
+            backdrop-filter: blur(6px);
+        }
+
+        #odometry-canvas {
+            width: 100%;
+            height: 200px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .odometry-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .odometry-footer > div {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .odometry-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        #odometry-distance {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        @media (max-width: 900px) {
+            #odometry-overlay {
+                right: 20px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            #header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            #header-metrics {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            #header-controls {
+                width: 100%;
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+
+            #odometry-overlay {
+                position: static;
+                width: auto;
+                margin: 12px 20px 0;
+            }
+        }
         
         .camera-status {
             position: absolute;
@@ -424,6 +600,18 @@
         <div id="header-left">
             <h2>🤖 Crawler</h2>
             <span id="connection-status">Disconnected</span>
+        </div>
+        <div id="header-metrics">
+            <div id="battery-widget" data-state="unknown" title="Battery status">
+                <div class="battery-body">
+                    <div id="battery-level"></div>
+                    <div class="battery-cap"></div>
+                </div>
+                <div class="battery-text">
+                    <span id="battery-voltage">--.- V</span>
+                    <small id="battery-percent">--%</small>
+                </div>
+            </div>
         </div>
         <div id="header-controls">
             <button id="settings-btn" class="btn" onclick="toggleSettings()" title="Settings">⚙️</button>
@@ -476,8 +664,19 @@
         </div>
         <div class="joystick-label">JOYSTICK</div>
     </div>
-    
+
     <div id="status">Speed: L=0% R=0%</div>
+
+    <div id="odometry-overlay">
+        <canvas id="odometry-canvas" width="220" height="220"></canvas>
+        <div class="odometry-footer">
+            <div>
+                <div class="odometry-label">Distance</div>
+                <div id="odometry-distance">0.0 ft</div>
+            </div>
+            <button id="odometry-reset" class="btn small" type="button">Reset</button>
+        </div>
+    </div>
 
     <div id="settings-overlay" class="hidden">
         <div id="settings-panel">
@@ -545,6 +744,16 @@
         const GAMEPAD_DEAD_ZONE = 0.18;
         const JOYSTICK_TURN_SENSITIVITY = 0.65;
 
+        const telemetryState = {
+            path: [{ x: 0, y: 0 }],
+            sequence: 0,
+            totalDistance: 0,
+            resetPending: false,
+        };
+
+        const odometryCanvas = document.getElementById('odometry-canvas');
+        const odometryCtx = odometryCanvas ? odometryCanvas.getContext('2d') : null;
+
         const inputState = {
             method: 'onscreen',
             gamepadIndex: null,
@@ -567,6 +776,210 @@
         ]);
 
         let settingsVisible = false;
+
+        function estimatePercentFromCellVoltage(cellVoltage) {
+            if (!Number.isFinite(cellVoltage)) return null;
+            const minCell = 3.2;
+            const maxCell = 4.2;
+            const span = maxCell - minCell;
+            if (span <= 0) return null;
+            const normalized = (cellVoltage - minCell) / span;
+            return Math.max(0, Math.min(100, normalized * 100));
+        }
+
+        function updateBatteryIndicator(battery) {
+            const widget = document.getElementById('battery-widget');
+            const voltageEl = document.getElementById('battery-voltage');
+            const percentEl = document.getElementById('battery-percent');
+            const levelEl = document.getElementById('battery-level');
+
+            if (!widget || !voltageEl || !percentEl || !levelEl) {
+                return;
+            }
+
+            if (!battery || !Number.isFinite(battery.voltage)) {
+                widget.dataset.state = 'unknown';
+                voltageEl.textContent = '--.- V';
+                percentEl.textContent = '--%';
+                levelEl.style.width = '8%';
+                return;
+            }
+
+            widget.dataset.state = battery.state || 'normal';
+            voltageEl.textContent = `${battery.voltage.toFixed(1)} V`;
+
+            let percentValue = Number.isFinite(battery.percent) ? battery.percent : null;
+            if (percentValue === null && Number.isFinite(battery.cell_voltage)) {
+                percentValue = estimatePercentFromCellVoltage(battery.cell_voltage);
+            }
+
+            if (percentValue !== null && Number.isFinite(percentValue)) {
+                const clamped = Math.max(0, Math.min(100, percentValue));
+                percentEl.textContent = `${Math.round(clamped)}%`;
+                levelEl.style.width = `${Math.max(6, Math.round(clamped))}%`;
+            } else if (Number.isFinite(battery.cell_voltage)) {
+                percentEl.textContent = `${battery.cell_voltage.toFixed(2)} V/cell`;
+                levelEl.style.width = '100%';
+            } else {
+                percentEl.textContent = '--%';
+                levelEl.style.width = '12%';
+            }
+        }
+
+        function updateDistanceLabel(distance) {
+            const distanceEl = document.getElementById('odometry-distance');
+            if (!distanceEl) return;
+            if (Number.isFinite(distance)) {
+                distanceEl.textContent = `${distance.toFixed(1)} ft`;
+            } else {
+                distanceEl.textContent = '--';
+            }
+        }
+
+        function normalizePathPoints(path) {
+            if (!Array.isArray(path) || path.length === 0) {
+                return [{ x: 0, y: 0 }];
+            }
+            const cleaned = [];
+            for (const point of path) {
+                if (!point) continue;
+                const x = Number(point.x);
+                const y = Number(point.y);
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    cleaned.push({ x, y });
+                }
+            }
+            return cleaned.length ? cleaned : [{ x: 0, y: 0 }];
+        }
+
+        function drawOdometryPath() {
+            if (!odometryCanvas || !odometryCtx) return;
+
+            const ratio = window.devicePixelRatio || 1;
+            const displayWidth = odometryCanvas.clientWidth || 220;
+            const displayHeight = odometryCanvas.clientHeight || 220;
+            const canvasWidth = Math.round(displayWidth * ratio);
+            const canvasHeight = Math.round(displayHeight * ratio);
+
+            if (odometryCanvas.width !== canvasWidth || odometryCanvas.height !== canvasHeight) {
+                odometryCanvas.width = canvasWidth;
+                odometryCanvas.height = canvasHeight;
+            }
+
+            odometryCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+            odometryCtx.clearRect(0, 0, displayWidth, displayHeight);
+
+            const points = telemetryState.path;
+            if (!points || points.length === 0) {
+                return;
+            }
+
+            const padding = 16;
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+
+            for (const pt of points) {
+                if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+                if (pt.x < minX) minX = pt.x;
+                if (pt.x > maxX) maxX = pt.x;
+                if (pt.y < minY) minY = pt.y;
+                if (pt.y > maxY) maxY = pt.y;
+            }
+
+            if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+                return;
+            }
+
+            if (minX === maxX) {
+                minX -= 0.5;
+                maxX += 0.5;
+            }
+            if (minY === maxY) {
+                minY -= 0.5;
+                maxY += 0.5;
+            }
+
+            const spanX = maxX - minX;
+            const spanY = maxY - minY;
+            const scale = Math.min(
+                (displayWidth - padding * 2) / spanX,
+                (displayHeight - padding * 2) / spanY
+            );
+
+            const offsetX = (displayWidth - spanX * scale) / 2;
+            const offsetY = (displayHeight - spanY * scale) / 2;
+
+            const project = (pt) => ({
+                x: (pt.x - minX) * scale + offsetX,
+                y: displayHeight - ((pt.y - minY) * scale + offsetY),
+            });
+
+            odometryCtx.strokeStyle = 'rgba(76, 175, 80, 0.9)';
+            odometryCtx.lineWidth = 2;
+            odometryCtx.beginPath();
+
+            points.forEach((pt, index) => {
+                const projected = project(pt);
+                if (index === 0) {
+                    odometryCtx.moveTo(projected.x, projected.y);
+                } else {
+                    odometryCtx.lineTo(projected.x, projected.y);
+                }
+            });
+            odometryCtx.stroke();
+
+            const startPoint = project(points[0]);
+            const endPoint = project(points[points.length - 1]);
+
+            odometryCtx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+            odometryCtx.beginPath();
+            odometryCtx.arc(startPoint.x, startPoint.y, 4, 0, Math.PI * 2);
+            odometryCtx.fill();
+
+            odometryCtx.fillStyle = '#FFC107';
+            odometryCtx.beginPath();
+            odometryCtx.arc(endPoint.x, endPoint.y, 5, 0, Math.PI * 2);
+            odometryCtx.fill();
+        }
+
+        function updateOdometryOverlay(odometry) {
+            if (!odometry) {
+                return;
+            }
+
+            telemetryState.sequence = odometry.sequence ?? telemetryState.sequence;
+            telemetryState.path = normalizePathPoints(odometry.path);
+
+            const distance = Number(odometry.total_distance_ft);
+            if (Number.isFinite(distance)) {
+                telemetryState.totalDistance = distance;
+            }
+
+            updateDistanceLabel(telemetryState.totalDistance);
+            drawOdometryPath();
+        }
+
+        const odometryResetButton = document.getElementById('odometry-reset');
+        if (odometryResetButton) {
+            odometryResetButton.addEventListener('click', () => {
+                telemetryState.resetPending = true;
+                telemetryState.path = [{ x: 0, y: 0 }];
+                telemetryState.totalDistance = 0;
+                updateDistanceLabel(0);
+                drawOdometryPath();
+                if (socket && socket.connected) {
+                    socket.emit('reset_odometry');
+                }
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            drawOdometryPath();
+        });
+
+        drawOdometryPath();
 
         function toggleSettings(force) {
             const overlay = document.getElementById('settings-overlay');
@@ -1000,7 +1413,21 @@
             document.getElementById('connection-status').textContent = 'Disconnected';
             document.getElementById('connection-status').style.color = '#f44336';
         });
-        
+
+        socket.on('telemetry', (payload) => {
+            updateBatteryIndicator(payload ? payload.battery : null);
+            if (payload && payload.odometry) {
+                updateOdometryOverlay(payload.odometry);
+            }
+        });
+
+        socket.on('odometry_reset', (payload) => {
+            telemetryState.resetPending = false;
+            if (payload && payload.success && Number.isFinite(payload.sequence)) {
+                telemetryState.sequence = payload.sequence;
+            }
+        });
+
         // Camera management
         function startCameras() {
             console.log('Starting cameras...');
