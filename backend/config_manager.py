@@ -45,6 +45,8 @@ class ConfigManager:
                 "max_speed": 100,
                 "left_channel": 2,
                 "right_channel": 3,
+                "left_trim": 1.0,
+                "right_trim": 1.0,
             },
             "battery": {
                 "voltage_register": "0x00",
@@ -53,7 +55,7 @@ class ConfigManager:
                 "cells": 3,
                 "warn_cell_voltage": 3.5,
                 "critical_cell_voltage": 3.3,
-                "full_voltage": 12.6,
+                "full_voltage": 12.3,
                 "empty_voltage": 9.9,
                 "ema_alpha": 0.2
             },

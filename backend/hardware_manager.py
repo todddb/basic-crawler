@@ -17,10 +17,13 @@ logger = logging.getLogger("utils")
 class HardwareManager:
     def __init__(self, config):
         self.config = config
-        self.i2c_address = int(self.config.get("motors", {}).get("i2c_address", "0x34"), 16)
-        self.left_channel = int(self.config.get("motors", {}).get("left_channel", 0))
-        self.right_channel = int(self.config.get("motors", {}).get("right_channel", 1))
-        self.max_speed = int(self.config.get("motors", {}).get("max_speed", 100))
+        motors_config = self.config.get("motors", {})
+        self.i2c_address = int(motors_config.get("i2c_address", "0x34"), 16)
+        self.left_channel = int(motors_config.get("left_channel", 0))
+        self.right_channel = int(motors_config.get("right_channel", 1))
+        self.max_speed = int(motors_config.get("max_speed", 100))
+        self.left_trim = self._parse_trim(motors_config.get("left_trim", 1.0), label="left")
+        self.right_trim = self._parse_trim(motors_config.get("right_trim", 1.0), label="right")
         self.speed_register_base = MOTOR_SPEED_REGISTER_BASE
         self.left_speed_register = self._compute_motor_register(self.left_channel, "left")
         self.right_speed_register = self._compute_motor_register(self.right_channel, "right")
@@ -178,6 +181,20 @@ class HardwareManager:
             logger.warning("Invalid encoder index value %r", value)
             return []
 
+    def _parse_trim(self, value, *, label):
+        default = 1.0
+        if value is None:
+            return default
+        try:
+            trim = float(value)
+        except (TypeError, ValueError):
+            logger.warning("Invalid %s motor trim %r; defaulting to 1.0", label, value)
+            return default
+        if trim <= 0:
+            logger.warning("%s motor trim %.3f is non-positive; defaulting to 1.0", label.capitalize(), trim)
+            return default
+        return trim
+
     def _infer_total_count(self, left_indices, right_indices):
         if not left_indices and not right_indices:
             return 0
@@ -217,6 +234,9 @@ class HardwareManager:
 
         self._record_motion_command(left_speed, right_speed, source=source)
 
+        left_output = self._clamp(int(round(left_speed * self.left_trim)), -self.max_speed, self.max_speed)
+        right_output = self._clamp(int(round(right_speed * self.right_trim)), -self.max_speed, self.max_speed)
+
         # Example mapping: write signed speeds to two registers (adjust to your controller)
         if self.bus is None:
             return
@@ -224,8 +244,8 @@ class HardwareManager:
         try:
             # Convert -100..100 to 0..200 then shift to signed domain in controller as needed.
             # If your controller expects signed bytes directly: wrap to 0..255 with & 0xFF.
-            self.bus.write_byte_data(self.i2c_address, self.left_speed_register, left_speed & 0xFF)
-            self.bus.write_byte_data(self.i2c_address, self.right_speed_register, right_speed & 0xFF)
+            self.bus.write_byte_data(self.i2c_address, self.left_speed_register, left_output & 0xFF)
+            self.bus.write_byte_data(self.i2c_address, self.right_speed_register, right_output & 0xFF)
         except Exception:
             logger.exception("Failed writing motor speeds over I2C")
 
