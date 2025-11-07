@@ -20,14 +20,16 @@
     "i2c_address": "0x34",
     "max_speed": 100,
     "left_channel": 2,
-    "right_channel": 3
+    "right_channel": 3,
+    "left_trim": 1.0,
+    "right_trim": 1.0
   },
   "battery": {
     "voltage_register": "0x00",
     "voltage_scale": 0.001,
     "divider_ratio": 1.0,
     "cells": 3,
-    "full_voltage": 12.6,
+    "full_voltage": 12.3,
     "empty_voltage": 9.9,
     "warn_cell_voltage": 3.5,
     "critical_cell_voltage": 3.3,
