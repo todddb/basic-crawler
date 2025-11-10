@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -76,8 +77,21 @@ class WifiManager:
     def _unescape(value: str) -> str:
         return value.replace("\\:", ":").replace("\\\\", "\\")
 
+    def _wrap_with_pkexec(self, command: List[str]) -> Optional[List[str]]:
+        """Return a pkexec-wrapped command when available."""
+
+        pkexec_path = shutil.which("pkexec")
+        if not pkexec_path:
+            return None
+
+        # pkexec requires the command to be provided without shell quoting.
+        return [pkexec_path, *command]
+
     def _run_nmcli(self, args: List[str], *, timeout: int = 20) -> str:
-        command = ["nmcli", "--terse", "--colors", "no", *args]
+        base_command = ["nmcli", "--terse", "--colors", "no", *args]
+        command = list(base_command)
+        attempted_priv_escalation = False
+
         try:
             result = subprocess.run(
                 command,
@@ -91,12 +105,31 @@ class WifiManager:
         except subprocess.TimeoutExpired as exc:
             raise WifiError("Timed out while communicating with nmcli") from exc
 
-        if result.returncode != 0:
+        while result.returncode != 0:
             stderr = (result.stderr or "").strip()
             stdout = (result.stdout or "").strip()
             message = stderr or stdout or "nmcli command failed"
 
             if "insufficient" in message.lower() and "privilege" in message.lower():
+                if not attempted_priv_escalation:
+                    wrapped_command = self._wrap_with_pkexec(base_command)
+                    if wrapped_command:
+                        attempted_priv_escalation = True
+                        try:
+                            result = subprocess.run(
+                                wrapped_command,
+                                capture_output=True,
+                                check=False,
+                                text=True,
+                                timeout=timeout,
+                            )
+                            command = wrapped_command
+                            continue
+                        except subprocess.TimeoutExpired as exc:
+                            raise WifiError(
+                                "Timed out while attempting to elevate nmcli permissions with pkexec"
+                            ) from exc
+
                 if hasattr(os, "geteuid"):
                     try:
                         if os.geteuid() != 0:
