@@ -1116,7 +1116,7 @@
             ['mousedown', 'touchstart', 'click'].forEach((eventName) => {
                 settingsPanel.addEventListener(eventName, (event) => {
                     event.stopPropagation();
-                }, { capture: true });
+                });
             });
         }
 
