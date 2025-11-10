@@ -256,12 +256,45 @@
             background: rgba(20, 20, 20, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 12px;
-            width: min(420px, 90vw);
-            padding: 20px 24px;
+            width: min(900px, 94vw);
+            max-height: 92vh;
+            padding: 24px 28px;
             box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
             display: flex;
             flex-direction: column;
             gap: 18px;
+            overflow-y: auto;
+        }
+
+        .settings-body {
+            display: flex;
+            align-items: stretch;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .settings-column {
+            flex: 1 1 320px;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .settings-column-right {
+            flex: 1.1 1 380px;
+        }
+
+        .wifi-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .wifi-section .settings-option-group {
+            align-items: stretch;
         }
 
         .settings-header {
@@ -401,8 +434,9 @@
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.15);
             background: rgba(0, 0, 0, 0.28);
-            max-height: 220px;
+            max-height: clamp(240px, 45vh, 360px);
             overflow-y: auto;
+            flex: 1;
         }
 
         .wifi-network-empty {
@@ -774,6 +808,28 @@
             font-weight: 600;
         }
 
+        @media (max-width: 1024px) {
+            #settings-panel {
+                width: min(760px, 94vw);
+            }
+        }
+
+        @media (max-width: 840px) {
+            #settings-panel {
+                width: min(520px, 94vw);
+                padding: 22px 24px;
+            }
+
+            .settings-body {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .settings-column-right {
+                flex: 1;
+            }
+        }
+
         @media (max-width: 900px) {
             #odometry-overlay {
                 right: 20px;
@@ -922,93 +978,99 @@
                 <button id="settings-close" onclick="toggleSettings()" aria-label="Close settings">✕</button>
             </div>
 
-            <div class="settings-section">
-                <label>Wi-Fi</label>
-                <div class="wifi-status-line">
-                    <div class="wifi-current-details">
-                        <div class="wifi-current-label">Current Network</div>
-                        <div id="wifi-current-network" class="wifi-current-value">Scanning…</div>
+            <div class="settings-body">
+                <div class="settings-column settings-column-left">
+                    <div class="settings-section">
+                        <label for="quality-select">Video Quality</label>
+                        <select id="quality-select" onchange="changeStreamQuality(this.value)">
+                            <option value="balanced">Balanced</option>
+                            <option value="low" selected>Low Lag</option>
+                            <option value="high">High Detail</option>
+                        </select>
                     </div>
-                    <button id="wifi-refresh" class="btn small" type="button">Refresh</button>
-                </div>
-                <div id="wifi-network-list" class="wifi-network-list">
-                    <div class="wifi-network-empty">Scanning for networks…</div>
-                </div>
-                <div class="settings-option-group column">
-                    <label for="wifi-selected-ssid">Selected Network</label>
-                    <div id="wifi-selected-ssid" class="wifi-selected-display placeholder" aria-live="polite">Select a network</div>
-                </div>
-                <div class="settings-option-group column">
-                    <label>Authentication</label>
-                    <div id="wifi-auth-options" class="wifi-auth-options">
-                        <label class="radio-option active">
-                            <input type="radio" name="wifi-auth-type" value="psk" checked>
-                            <span>Passphrase</span>
-                        </label>
-                        <label class="radio-option">
-                            <input type="radio" name="wifi-auth-type" value="enterprise">
-                            <span>Enterprise</span>
-                        </label>
+
+                    <div class="settings-section">
+                        <label>Control Style</label>
+                        <div class="settings-option-group">
+                            <div class="toggle-container" title="Toggle control scheme">
+                                <span>Tank</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="control-toggle" checked onchange="onControlToggle(this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span>Joystick</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div id="wifi-psk-group" class="settings-option-group column">
-                    <label for="wifi-psk">Passphrase</label>
-                    <input type="password" id="wifi-psk" placeholder="Network password">
-                </div>
-                <div id="wifi-enterprise-fields" class="settings-option-group column hidden">
-                    <label for="wifi-username">Username</label>
-                    <input type="text" id="wifi-username" placeholder="Identity">
-                    <label for="wifi-password">Password</label>
-                    <input type="password" id="wifi-password" placeholder="Password">
-                </div>
-                <div class="settings-option-group">
-                    <button id="wifi-connect-btn" class="btn" type="button" disabled>Connect</button>
-                </div>
-                <div class="settings-option-group column">
-                    <small id="wifi-message" class="wifi-message"></small>
-                </div>
-            </div>
 
-            <div class="settings-section">
-                <label for="quality-select">Video Quality</label>
-                <select id="quality-select" onchange="changeStreamQuality(this.value)">
-                    <option value="balanced">Balanced</option>
-                    <option value="low" selected>Low Lag</option>
-                    <option value="high">High Detail</option>
-                </select>
-            </div>
-
-            <div class="settings-section">
-                <label>Control Style</label>
-                <div class="settings-option-group">
-                    <div class="toggle-container" title="Toggle control scheme">
-                        <span>Tank</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="control-toggle" checked onchange="onControlToggle(this.checked)">
-                            <span class="toggle-slider"></span>
-                        </label>
-                        <span>Joystick</span>
+                    <div class="settings-section">
+                        <label>Input Device</label>
+                        <div class="settings-option-group" id="input-method-options">
+                            <label class="radio-option active">
+                                <input type="radio" name="input-method" value="onscreen" checked onchange="onInputMethodChange(this.value)">
+                                <span>On-Screen Controls</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="input-method" value="keyboard" onchange="onInputMethodChange(this.value)">
+                                <span>Keyboard</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="input-method" value="xbox" onchange="onInputMethodChange(this.value)">
+                                <span>Xbox Controller</span>
+                            </label>
+                        </div>
+                        <small id="gamepad-status" style="color: rgba(255,255,255,0.6);">No gamepad detected.</small>
                     </div>
                 </div>
-            </div>
 
-            <div class="settings-section">
-                <label>Input Device</label>
-                <div class="settings-option-group" id="input-method-options">
-                    <label class="radio-option active">
-                        <input type="radio" name="input-method" value="onscreen" checked onchange="onInputMethodChange(this.value)">
-                        <span>On-Screen Controls</span>
-                    </label>
-                    <label class="radio-option">
-                        <input type="radio" name="input-method" value="keyboard" onchange="onInputMethodChange(this.value)">
-                        <span>Keyboard</span>
-                    </label>
-                    <label class="radio-option">
-                        <input type="radio" name="input-method" value="xbox" onchange="onInputMethodChange(this.value)">
-                        <span>Xbox Controller</span>
-                    </label>
+                <div class="settings-column settings-column-right">
+                    <div class="settings-section wifi-section">
+                        <label>Wi-Fi</label>
+                        <div class="wifi-status-line">
+                            <div class="wifi-current-details">
+                                <div class="wifi-current-label">Current Network</div>
+                                <div id="wifi-current-network" class="wifi-current-value">Scanning…</div>
+                            </div>
+                            <button id="wifi-refresh" class="btn small" type="button">Refresh</button>
+                        </div>
+                        <div id="wifi-network-list" class="wifi-network-list">
+                            <div class="wifi-network-empty">Scanning for networks…</div>
+                        </div>
+                        <div class="settings-option-group column">
+                            <label for="wifi-selected-ssid">Selected Network</label>
+                            <div id="wifi-selected-ssid" class="wifi-selected-display placeholder" aria-live="polite">Select a network</div>
+                        </div>
+                        <div class="settings-option-group column">
+                            <label>Authentication</label>
+                            <div id="wifi-auth-options" class="wifi-auth-options">
+                                <label class="radio-option active">
+                                    <input type="radio" name="wifi-auth-type" value="psk" checked>
+                                    <span>Passphrase</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="wifi-auth-type" value="enterprise">
+                                    <span>Enterprise</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div id="wifi-psk-group" class="settings-option-group column">
+                            <label for="wifi-psk">Passphrase</label>
+                            <input type="password" id="wifi-psk" placeholder="Network password">
+                        </div>
+                        <div id="wifi-enterprise-fields" class="settings-option-group column hidden">
+                            <label for="wifi-username">Username</label>
+                            <input type="text" id="wifi-username" placeholder="Identity">
+                            <label for="wifi-password">Password</label>
+                            <input type="password" id="wifi-password" placeholder="Password">
+                        </div>
+                        <div class="settings-option-group">
+                            <button id="wifi-connect-btn" class="btn" type="button" disabled>Connect</button>
+                        </div>
+                        <div class="settings-option-group column">
+                            <small id="wifi-message" class="wifi-message"></small>
+                        </div>
+                    </div>
                 </div>
-                <small id="gamepad-status" style="color: rgba(255,255,255,0.6);">No gamepad detected.</small>
             </div>
         </div>
     </div>
@@ -1352,6 +1414,9 @@
             if (!network) return;
             wifiState.selectedNetwork = network;
             wifiState.selectedIdentifier = getWifiIdentifier(network);
+            if (wifiState.authType === 'enterprise' && !network.supports_enterprise) {
+                wifiState.authType = 'psk';
+            }
             clearWifiMessage();
             updateWifiSelectionUI();
             renderWifiNetworks();
@@ -1379,12 +1444,17 @@
 
             wifiState.requiresPassphrase = selected ? selected.requires_passphrase !== false : true;
 
+            if (selected && wifiState.authType === 'enterprise' && !selected.supports_enterprise) {
+                wifiState.authType = 'psk';
+            }
+
             const pskInput = document.getElementById('wifi-psk');
             if (pskInput && wifiState.requiresPassphrase === false) {
                 pskInput.value = '';
             }
 
             updateWifiAuthUI();
+            updateWifiConnectAvailability();
         }
 
         function updateWifiAuthUI() {
