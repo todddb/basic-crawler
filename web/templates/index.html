@@ -297,6 +297,24 @@
             align-items: stretch;
         }
 
+        #wifi-enterprise-fields label.wifi-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+
+        #wifi-enterprise-fields label.wifi-checkbox input {
+            width: auto;
+            margin: 0;
+        }
+
+        #wifi-enterprise-fields textarea {
+            resize: vertical;
+            min-height: 96px;
+            font-family: inherit;
+        }
+
         .settings-header {
             display: flex;
             justify-content: space-between;
@@ -366,8 +384,26 @@
             background: rgba(76, 175, 80, 0.18);
         }
 
+        .radio-option.disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .radio-option.disabled input {
+            cursor: not-allowed;
+        }
+
         .settings-section input[type="text"],
         .settings-section input[type="password"] {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: #fff;
+            width: 100%;
+        }
+
+        .settings-section textarea {
             background: rgba(0, 0, 0, 0.35);
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 6px;
@@ -1062,6 +1098,23 @@
                             <input type="text" id="wifi-username" placeholder="Identity">
                             <label for="wifi-password">Password</label>
                             <input type="password" id="wifi-password" placeholder="Password">
+                            <label for="wifi-eap-method">EAP Method</label>
+                            <select id="wifi-eap-method">
+                                <option value="peap" selected>PEAP (MSCHAPv2)</option>
+                                <option value="ttls-pap">TTLS (PAP)</option>
+                                <option value="ttls-mschapv2">TTLS (MSCHAPv2)</option>
+                                <option value="ttls-gtc">TTLS (GTC)</option>
+                            </select>
+                            <label for="wifi-anonymous-identity">Anonymous Identity (optional)</label>
+                            <input type="text" id="wifi-anonymous-identity" placeholder="Anonymous identity (optional)">
+                            <label for="wifi-domain-match">Domain (optional)</label>
+                            <input type="text" id="wifi-domain-match" placeholder="Domain suffix match (optional)">
+                            <label class="wifi-checkbox" for="wifi-system-ca">
+                                <input type="checkbox" id="wifi-system-ca" checked>
+                                <span>Trust system CA certificates</span>
+                            </label>
+                            <label for="wifi-ca-cert">Additional CA certificate (PEM, optional)</label>
+                            <textarea id="wifi-ca-cert" rows="4" placeholder="Paste PEM-formatted certificate"></textarea>
                         </div>
                         <div class="settings-option-group">
                             <button id="wifi-connect-btn" class="btn" type="button" disabled>Connect</button>
@@ -1246,7 +1299,7 @@
                 }
             });
 
-            ['wifi-psk', 'wifi-username', 'wifi-password'].forEach((id) => {
+            ['wifi-psk', 'wifi-username', 'wifi-password', 'wifi-anonymous-identity', 'wifi-domain-match'].forEach((id) => {
                 const input = document.getElementById(id);
                 if (input) {
                     input.addEventListener('input', () => {
@@ -1255,6 +1308,28 @@
                     });
                 }
             });
+
+            const caCertInput = document.getElementById('wifi-ca-cert');
+            if (caCertInput) {
+                caCertInput.addEventListener('input', () => {
+                    clearWifiMessage();
+                });
+            }
+
+            const eapSelect = document.getElementById('wifi-eap-method');
+            if (eapSelect) {
+                eapSelect.addEventListener('change', () => {
+                    updateWifiConnectAvailability();
+                    clearWifiMessage();
+                });
+            }
+
+            const systemCaToggle = document.getElementById('wifi-system-ca');
+            if (systemCaToggle) {
+                systemCaToggle.addEventListener('change', () => {
+                    clearWifiMessage();
+                });
+            }
 
             updateWifiAuthUI();
             updateWifiConnectAvailability();
@@ -1414,6 +1489,16 @@
             if (!network) return;
             wifiState.selectedNetwork = network;
             wifiState.selectedIdentifier = getWifiIdentifier(network);
+            const securityLabel = String(network.security || '').toUpperCase();
+            const enterpriseOnly = Boolean(
+                network.supports_enterprise &&
+                (securityLabel.includes('802.1X') || securityLabel.includes('EAP')) &&
+                !securityLabel.includes('PSK') &&
+                !securityLabel.includes('SAE')
+            );
+            if (enterpriseOnly) {
+                wifiState.authType = 'enterprise';
+            }
             if (wifiState.authType === 'enterprise' && !network.supports_enterprise) {
                 wifiState.authType = 'psk';
             }
@@ -1458,10 +1543,19 @@
         }
 
         function updateWifiAuthUI() {
+            const selected = wifiState.selectedNetwork;
+            const enterpriseSupported = Boolean(selected && selected.supports_enterprise);
             const options = document.querySelectorAll('#wifi-auth-options .radio-option');
             options.forEach((option) => {
                 const input = option.querySelector('input[type="radio"]');
                 if (!input) return;
+                if (input.value === 'enterprise') {
+                    input.disabled = !enterpriseSupported;
+                    option.classList.toggle('disabled', !enterpriseSupported);
+                } else {
+                    input.disabled = false;
+                    option.classList.remove('disabled');
+                }
                 const active = input.value === wifiState.authType;
                 option.classList.toggle('active', active);
                 if (input.checked !== active) {
@@ -1488,7 +1582,12 @@
             }
 
             if (enterpriseGroup) {
-                enterpriseGroup.classList.toggle('hidden', wifiState.authType !== 'enterprise');
+                const hidden = wifiState.authType !== 'enterprise';
+                enterpriseGroup.classList.toggle('hidden', hidden);
+                const enterpriseInputs = enterpriseGroup.querySelectorAll('input, textarea, select');
+                enterpriseInputs.forEach((element) => {
+                    element.disabled = hidden;
+                });
             }
         }
 
@@ -1548,6 +1647,55 @@
                 }
                 payload.username = username;
                 payload.password = password;
+
+                const eapSelect = document.getElementById('wifi-eap-method');
+                const eapSelection = eapSelect ? eapSelect.value : 'peap';
+                let eapMethod = 'peap';
+                let phase2Auth = 'mschapv2';
+                switch (eapSelection) {
+                    case 'ttls-pap':
+                        eapMethod = 'ttls';
+                        phase2Auth = 'pap';
+                        break;
+                    case 'ttls-mschapv2':
+                        eapMethod = 'ttls';
+                        phase2Auth = 'mschapv2';
+                        break;
+                    case 'ttls-gtc':
+                        eapMethod = 'ttls';
+                        phase2Auth = 'gtc';
+                        break;
+                    default:
+                        eapMethod = 'peap';
+                        phase2Auth = 'mschapv2';
+                        break;
+                }
+                payload.eap_method = eapMethod;
+                payload.phase2_auth = phase2Auth;
+
+                const anonymousInput = document.getElementById('wifi-anonymous-identity');
+                const domainInput = document.getElementById('wifi-domain-match');
+                const anonValue = anonymousInput ? anonymousInput.value.trim() : '';
+                const domainValue = domainInput ? domainInput.value.trim() : '';
+                if (anonValue) {
+                    payload.anonymous_identity = anonValue;
+                }
+                if (domainValue) {
+                    payload.domain_suffix_match = domainValue;
+                }
+
+                const systemCaInput = document.getElementById('wifi-system-ca');
+                if (systemCaInput) {
+                    payload.system_ca_certs = Boolean(systemCaInput.checked);
+                }
+
+                const caCertInput = document.getElementById('wifi-ca-cert');
+                if (caCertInput) {
+                    const caValue = caCertInput.value.trim();
+                    if (caValue) {
+                        payload.ca_cert_pem = caValue;
+                    }
+                }
             } else if (wifiState.requiresPassphrase) {
                 const pskInput = document.getElementById('wifi-psk');
                 const psk = pskInput ? pskInput.value : '';

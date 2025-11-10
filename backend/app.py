@@ -139,15 +139,54 @@ def api_wifi_connect():
     username = data.get("username")
     password = data.get("password")
     bssid = data.get("bssid")
+    eap_method = data.get("eap_method")
+    phase2_auth = data.get("phase2_auth")
+    anonymous_identity = data.get("anonymous_identity")
+    domain_suffix_match = data.get("domain_suffix_match")
+    system_ca_certs = data.get("system_ca_certs")
+    ca_cert_pem = data.get("ca_cert_pem")
+
+    if isinstance(system_ca_certs, str):
+        system_ca_certs = system_ca_certs.lower() not in {"false", "0", "no", "off"}
+
+    if isinstance(system_ca_certs, (int, float)):
+        system_ca_certs = bool(system_ca_certs)
+
+    if isinstance(system_ca_certs, bool) is False and system_ca_certs is not None:
+        system_ca_certs = None
+
+    if isinstance(eap_method, str):
+        eap_method = eap_method.strip().lower() or None
+
+    if isinstance(phase2_auth, str):
+        phase2_auth = phase2_auth.strip().lower() or None
+
+    if isinstance(anonymous_identity, str):
+        anonymous_identity = anonymous_identity.strip() or None
+
+    if isinstance(domain_suffix_match, str):
+        domain_suffix_match = domain_suffix_match.strip() or None
+
+    if isinstance(ca_cert_pem, str):
+        ca_cert_pem = ca_cert_pem.strip() or None
+
+    connect_kwargs = {
+        "psk": psk,
+        "username": username,
+        "password": password,
+        "bssid": bssid,
+        "eap_method": eap_method,
+        "phase2_auth": phase2_auth,
+        "anonymous_identity": anonymous_identity,
+        "domain_suffix_match": domain_suffix_match,
+        "ca_cert_pem": ca_cert_pem,
+    }
+
+    if system_ca_certs is not None:
+        connect_kwargs["system_ca_certs"] = system_ca_certs
 
     try:
-        result = wifi_manager.connect(
-            ssid,
-            psk=psk,
-            username=username,
-            password=password,
-            bssid=bssid,
-        )
+        result = wifi_manager.connect(ssid, **connect_kwargs)
     except WifiError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
 
