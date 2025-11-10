@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 
@@ -41,6 +43,7 @@ class WifiManager:
 
     def __init__(self, logger: Optional[logging.Logger] = None) -> None:
         self._logger = logger or logging.getLogger(__name__)
+        self._cert_dir = Path.home() / ".cache" / "crawler" / "wifi_certs"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -164,6 +167,36 @@ class WifiManager:
             if self._logger:
                 self._logger.debug("nmcli command failed but ignored: %s (%s)", args, exc)
 
+    def _store_ca_certificate(self, ca_cert_pem: str) -> str:
+        """Persist a CA certificate and return the absolute filesystem path."""
+
+        normalized = (ca_cert_pem or "").strip()
+        if not normalized:
+            raise WifiError("CA certificate content is empty")
+
+        if "BEGIN CERTIFICATE" not in normalized:
+            raise WifiError("CA certificate must be in PEM format")
+
+        if not normalized.endswith("\n"):
+            normalized = f"{normalized}\n"
+
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+        try:
+            self._cert_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise WifiError("Unable to prepare certificate storage directory") from exc
+
+        cert_path = self._cert_dir / f"{digest}.pem"
+
+        try:
+            if not cert_path.exists() or cert_path.read_text(encoding="utf-8") != normalized:
+                cert_path.write_text(normalized, encoding="utf-8")
+        except OSError as exc:
+            raise WifiError("Failed to store CA certificate") from exc
+
+        return str(cert_path)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -254,6 +287,12 @@ class WifiManager:
         username: Optional[str] = None,
         password: Optional[str] = None,
         bssid: Optional[str] = None,
+        eap_method: Optional[str] = None,
+        phase2_auth: Optional[str] = None,
+        anonymous_identity: Optional[str] = None,
+        domain_suffix_match: Optional[str] = None,
+        system_ca_certs: Optional[bool] = True,
+        ca_cert_pem: Optional[str] = None,
     ) -> Dict[str, object]:
         ssid = (ssid or "").strip()
         if not ssid:
@@ -272,6 +311,22 @@ class WifiManager:
             # Remove any existing connection with the same name to avoid conflicts.
             self._run_nmcli_allow_fail(["connection", "delete", "id", connection_name])
 
+            eap = (eap_method or "peap").strip().lower()
+            if eap not in {"peap", "ttls"}:
+                raise WifiError("Unsupported enterprise EAP method")
+
+            if phase2_auth:
+                phase2 = phase2_auth.strip().lower()
+            else:
+                phase2 = "mschapv2" if eap == "peap" else "pap"
+
+            if phase2 not in {"mschapv2", "pap", "gtc"}:
+                raise WifiError("Unsupported enterprise inner authentication method")
+
+            cert_path: Optional[str] = None
+            if ca_cert_pem:
+                cert_path = self._store_ca_certificate(ca_cert_pem)
+
             add_args = [
                 "connection",
                 "add",
@@ -286,14 +341,35 @@ class WifiManager:
                 "wifi-sec.key-mgmt",
                 "wpa-eap",
                 "802-1x.eap",
-                "peap",
+                eap,
                 "802-1x.phase2-auth",
-                "mschapv2",
+                phase2,
                 "802-1x.identity",
                 username,
                 "802-1x.password",
                 password,
             ]
+
+            if anonymous_identity:
+                add_args.extend([
+                    "802-1x.anonymous-identity",
+                    anonymous_identity.strip(),
+                ])
+
+            if domain_suffix_match:
+                add_args.extend([
+                    "802-1x.domain-suffix-match",
+                    domain_suffix_match.strip(),
+                ])
+
+            if system_ca_certs is not None:
+                add_args.extend([
+                    "802-1x.system-ca-certs",
+                    "yes" if system_ca_certs else "no",
+                ])
+
+            if cert_path:
+                add_args.extend(["802-1x.ca-cert", cert_path])
 
             if bssid:
                 add_args.extend(["wifi.bssid", bssid])
