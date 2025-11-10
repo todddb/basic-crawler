@@ -14,6 +14,7 @@ from camera_manager import CameraManager
 from config_manager import ConfigManager
 from hardware_manager import HardwareManager
 from utils import setup_logging
+from wifi_manager import WifiManager, WifiError
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -30,12 +31,13 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 config_manager = None
 camera_manager = None
 hardware_manager = None
+wifi_manager = None
 logger = None
 telemetry_thread_started = False
 
 def initialize_systems():
     """Initialize all subsystems"""
-    global config_manager, camera_manager, hardware_manager, logger
+    global config_manager, camera_manager, hardware_manager, wifi_manager, logger
 
     config_manager = ConfigManager()
     config = config_manager.get_config()
@@ -45,6 +47,7 @@ def initialize_systems():
     
     hardware_manager = HardwareManager(config)
     camera_manager = CameraManager(config)
+    wifi_manager = WifiManager(logger)
 
     logger.info("All systems initialized")
     start_background_tasks()
@@ -93,7 +96,7 @@ def api_status():
     return jsonify({
         "success": True,
         "hardware": hardware_manager.get_status() if hardware_manager else {},
-        "cameras": camera_manager.get_status() if camera_manager else {}
+        "cameras": camera_manager.get_status() if camera_manager else {},
     })
 
 
@@ -107,6 +110,48 @@ def api_camera_quality():
     applied = camera_manager.apply_quality_profile(profile)
     status_code = 200 if applied else 400
     return jsonify({"success": applied, "profile": profile}), status_code
+
+
+@app.route("/api/wifi/networks", methods=["GET"])
+def api_wifi_networks():
+    if not wifi_manager:
+        return jsonify({"success": False, "error": "Wi-Fi manager unavailable"}), 503
+
+    try:
+        result = wifi_manager.scan_networks()
+    except WifiError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+    return jsonify({"success": True, **result})
+
+
+@app.route("/api/wifi/connect", methods=["POST"])
+def api_wifi_connect():
+    if not wifi_manager:
+        return jsonify({"success": False, "error": "Wi-Fi manager unavailable"}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    ssid = (data.get("ssid") or "").strip()
+    if not ssid:
+        return jsonify({"success": False, "error": "SSID is required"}), 400
+
+    psk = data.get("psk")
+    username = data.get("username")
+    password = data.get("password")
+    bssid = data.get("bssid")
+
+    try:
+        result = wifi_manager.connect(
+            ssid,
+            psk=psk,
+            username=username,
+            password=password,
+            bssid=bssid,
+        )
+    except WifiError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    return jsonify({"success": True, **result})
 
 
 @app.route("/api/shutdown", methods=["POST"])

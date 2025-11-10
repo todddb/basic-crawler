@@ -308,6 +308,11 @@
             flex-wrap: wrap;
         }
 
+        .settings-option-group.column {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
         .radio-option {
             display: inline-flex;
             align-items: center;
@@ -326,6 +331,181 @@
         .radio-option.active {
             border-color: #4CAF50;
             background: rgba(76, 175, 80, 0.18);
+        }
+
+        .settings-section input[type="text"],
+        .settings-section input[type="password"] {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: #fff;
+            width: 100%;
+        }
+
+        .settings-section input[type="text"]::placeholder,
+        .settings-section input[type="password"]::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .settings-section input[type="text"]:focus,
+        .settings-section input[type="password"]:focus {
+            outline: 2px solid rgba(76, 175, 80, 0.45);
+            border-color: rgba(76, 175, 80, 0.65);
+        }
+
+        .wifi-status-line {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .wifi-current-details {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .wifi-current-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        .wifi-current-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .wifi-network-list {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(0, 0, 0, 0.28);
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .wifi-network-empty {
+            padding: 14px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 13px;
+        }
+
+        .wifi-network-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            padding: 10px 14px;
+            border: none;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .wifi-network-item:last-child {
+            border-bottom: none;
+        }
+
+        .wifi-network-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .wifi-network-item.active {
+            background: rgba(76, 175, 80, 0.16);
+            border-left: 3px solid #4CAF50;
+        }
+
+        .wifi-network-item.selected {
+            box-shadow: inset 0 0 0 2px rgba(80, 160, 255, 0.5);
+            background: rgba(80, 160, 255, 0.12);
+        }
+
+        .wifi-network-label {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .wifi-network-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .wifi-network-name.hidden-ssid {
+            font-style: italic;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .wifi-network-meta {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        .wifi-network-signal {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 3px;
+            font-size: 12px;
+        }
+
+        .wifi-signal-bars {
+            font-size: 16px;
+            letter-spacing: 1px;
+        }
+
+        .wifi-message {
+            min-height: 18px;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        .wifi-message.error {
+            color: #ff8a80;
+        }
+
+        .wifi-message.success {
+            color: #b7ffb4;
+        }
+
+        #wifi-psk-group.disabled input {
+            opacity: 0.5;
+        }
+
+        #wifi-psk-group.disabled label::after {
+            content: " (not required)";
+            font-size: 12px;
+            font-weight: normal;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .wifi-auth-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .wifi-network-list.loading {
+            opacity: 0.65;
+        }
+
+        .wifi-network-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .wifi-network-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .wifi-network-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.35);
         }
 
         #video-container {
@@ -703,6 +883,53 @@
             </div>
 
             <div class="settings-section">
+                <label>Wi-Fi</label>
+                <div class="wifi-status-line">
+                    <div class="wifi-current-details">
+                        <div class="wifi-current-label">Current Network</div>
+                        <div id="wifi-current-network" class="wifi-current-value">Scanning…</div>
+                    </div>
+                    <button id="wifi-refresh" class="btn small" type="button">Refresh</button>
+                </div>
+                <div id="wifi-network-list" class="wifi-network-list">
+                    <div class="wifi-network-empty">Scanning for networks…</div>
+                </div>
+                <div class="settings-option-group column">
+                    <label for="wifi-selected-ssid">Selected Network</label>
+                    <input id="wifi-selected-ssid" type="text" placeholder="Select a network" readonly>
+                </div>
+                <div class="settings-option-group column">
+                    <label>Authentication</label>
+                    <div id="wifi-auth-options" class="wifi-auth-options">
+                        <label class="radio-option active">
+                            <input type="radio" name="wifi-auth-type" value="psk" checked>
+                            <span>Passphrase</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="wifi-auth-type" value="enterprise">
+                            <span>Enterprise</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="wifi-psk-group" class="settings-option-group column">
+                    <label for="wifi-psk">Passphrase</label>
+                    <input type="password" id="wifi-psk" placeholder="Network password">
+                </div>
+                <div id="wifi-enterprise-fields" class="settings-option-group column hidden">
+                    <label for="wifi-username">Username</label>
+                    <input type="text" id="wifi-username" placeholder="Identity">
+                    <label for="wifi-password">Password</label>
+                    <input type="password" id="wifi-password" placeholder="Password">
+                </div>
+                <div class="settings-option-group">
+                    <button id="wifi-connect-btn" class="btn" type="button" disabled>Connect</button>
+                </div>
+                <div class="settings-option-group column">
+                    <small id="wifi-message" class="wifi-message"></small>
+                </div>
+            </div>
+
+            <div class="settings-section">
                 <label for="quality-select">Video Quality</label>
                 <select id="quality-select" onchange="changeStreamQuality(this.value)">
                     <option value="balanced">Balanced</option>
@@ -803,6 +1030,415 @@
         ]);
 
         let settingsVisible = false;
+
+        const wifiState = {
+            networks: [],
+            active: null,
+            selectedNetwork: null,
+            selectedIdentifier: '',
+            authType: 'psk',
+            requiresPassphrase: true,
+            loading: false,
+            connecting: false,
+            lastScan: 0,
+        };
+
+        let wifiInitialized = false;
+
+        function getWifiIdentifier(network) {
+            if (!network) return '';
+            if (network.bssid) return String(network.bssid);
+            if (network.ssid) return String(network.ssid);
+            return '';
+        }
+
+        function setWifiMessage(text, type = 'info') {
+            const messageEl = document.getElementById('wifi-message');
+            if (!messageEl) return;
+            messageEl.textContent = text || '';
+            messageEl.classList.remove('error', 'success');
+            if (type === 'error') {
+                messageEl.classList.add('error');
+            } else if (type === 'success') {
+                messageEl.classList.add('success');
+            }
+        }
+
+        function clearWifiMessage() {
+            setWifiMessage('');
+        }
+
+        function getWifiSignalBars(signal) {
+            if (!Number.isFinite(signal)) return '····';
+            const value = Math.max(0, Math.min(100, Number(signal)));
+            if (value >= 80) return '▂▄▆█';
+            if (value >= 60) return '▂▄▆▆';
+            if (value >= 40) return '▂▄▄▄';
+            if (value >= 20) return '▂···';
+            return '····';
+        }
+
+        function formatWifiSignalPercent(signal) {
+            if (!Number.isFinite(signal)) return '—';
+            const value = Math.max(0, Math.min(100, Number(signal)));
+            return `${Math.round(value)}%`;
+        }
+
+        function initializeWifiSettings() {
+            if (wifiInitialized) return;
+            wifiInitialized = true;
+
+            const refreshButton = document.getElementById('wifi-refresh');
+            if (refreshButton) {
+                refreshButton.addEventListener('click', () => {
+                    refreshWifiNetworks(true);
+                });
+            }
+
+            const connectButton = document.getElementById('wifi-connect-btn');
+            if (connectButton) {
+                connectButton.addEventListener('click', onWifiConnectClick);
+            }
+
+            const authRadios = document.querySelectorAll('input[name="wifi-auth-type"]');
+            authRadios.forEach((radio) => {
+                radio.addEventListener('change', () => {
+                    if (radio.checked) {
+                        setWifiAuthType(radio.value);
+                    }
+                });
+                if (radio.checked) {
+                    wifiState.authType = radio.value === 'enterprise' ? 'enterprise' : 'psk';
+                }
+            });
+
+            ['wifi-psk', 'wifi-username', 'wifi-password'].forEach((id) => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.addEventListener('input', () => {
+                        updateWifiConnectAvailability();
+                        clearWifiMessage();
+                    });
+                }
+            });
+
+            updateWifiAuthUI();
+            updateWifiConnectAvailability();
+        }
+
+        async function refreshWifiNetworks(force = false, options = {}) {
+            const { preserveMessage = false } = options || {};
+            if (wifiState.loading) return;
+            wifiState.loading = true;
+
+            const listEl = document.getElementById('wifi-network-list');
+            if (listEl) {
+                listEl.classList.add('loading');
+                if (force || !wifiState.networks.length) {
+                    listEl.innerHTML = '<div class="wifi-network-empty">Scanning for networks…</div>';
+                }
+            }
+
+            if (!preserveMessage) {
+                setWifiMessage('Scanning for networks…');
+            }
+
+            try {
+                const response = await fetch('/api/wifi/networks');
+                if (!response.ok) {
+                    throw new Error(`Request failed (${response.status})`);
+                }
+                const data = await response.json();
+                if (!data || !data.success) {
+                    throw new Error((data && data.error) || 'Unable to scan networks');
+                }
+
+                const networks = Array.isArray(data.networks) ? data.networks : [];
+                wifiState.networks = networks;
+                wifiState.active = data.active || null;
+                wifiState.lastScan = Date.now();
+
+                const previousId = wifiState.selectedIdentifier || getWifiIdentifier(wifiState.selectedNetwork);
+                const activeId = getWifiIdentifier(wifiState.active);
+
+                let matched = null;
+                if (previousId) {
+                    matched = networks.find((network) => getWifiIdentifier(network) === previousId) || null;
+                }
+
+                if (!matched && activeId) {
+                    matched = networks.find((network) => getWifiIdentifier(network) === activeId) || wifiState.active;
+                }
+
+                wifiState.selectedNetwork = matched;
+                wifiState.selectedIdentifier = getWifiIdentifier(matched) || '';
+
+                renderWifiNetworks();
+                updateWifiStatusDisplay();
+                updateWifiSelectionUI();
+
+                if (!preserveMessage) {
+                    clearWifiMessage();
+                }
+            } catch (error) {
+                console.error('Failed to refresh Wi-Fi networks', error);
+                setWifiMessage(error.message || 'Unable to scan networks.', 'error');
+                if (listEl) {
+                    listEl.innerHTML = '<div class="wifi-network-empty">Unable to load networks</div>';
+                }
+            } finally {
+                wifiState.loading = false;
+                if (listEl) {
+                    listEl.classList.remove('loading');
+                }
+                updateWifiConnectAvailability();
+            }
+        }
+
+        function renderWifiNetworks() {
+            const listEl = document.getElementById('wifi-network-list');
+            if (!listEl) return;
+
+            listEl.innerHTML = '';
+            if (!wifiState.networks || wifiState.networks.length === 0) {
+                listEl.innerHTML = '<div class="wifi-network-empty">No networks found</div>';
+                return;
+            }
+
+            const selectedId = wifiState.selectedIdentifier;
+
+            wifiState.networks.forEach((network) => {
+                if (!network) return;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'wifi-network-item';
+
+                const identifier = getWifiIdentifier(network);
+                if (network.active) {
+                    button.classList.add('active');
+                }
+                if (selectedId && identifier === selectedId) {
+                    button.classList.add('selected');
+                }
+
+                const label = document.createElement('div');
+                label.className = 'wifi-network-label';
+
+                const name = document.createElement('div');
+                name.className = 'wifi-network-name';
+                name.textContent = network.ssid || 'Hidden network';
+                if (!network.ssid) {
+                    name.classList.add('hidden-ssid');
+                }
+
+                const meta = document.createElement('div');
+                meta.className = 'wifi-network-meta';
+                meta.textContent = network.security || 'Open';
+
+                label.appendChild(name);
+                label.appendChild(meta);
+
+                const signal = document.createElement('div');
+                signal.className = 'wifi-network-signal';
+
+                const bars = document.createElement('div');
+                bars.className = 'wifi-signal-bars';
+                bars.textContent = getWifiSignalBars(network.signal);
+
+                const percent = document.createElement('div');
+                percent.textContent = formatWifiSignalPercent(network.signal);
+
+                signal.appendChild(bars);
+                signal.appendChild(percent);
+
+                button.appendChild(label);
+                button.appendChild(signal);
+
+                button.addEventListener('click', () => {
+                    selectWifiNetwork(network);
+                });
+
+                listEl.appendChild(button);
+            });
+        }
+
+        function updateWifiStatusDisplay() {
+            const currentEl = document.getElementById('wifi-current-network');
+            if (!currentEl) return;
+
+            const active = wifiState.active || (wifiState.networks || []).find((network) => network && network.active);
+            if (active && (active.ssid || active.bssid)) {
+                const name = active.ssid || active.bssid;
+                const percent = formatWifiSignalPercent(active.signal);
+                currentEl.textContent = percent === '—' ? name : `${name} (${percent})`;
+            } else {
+                currentEl.textContent = 'Not connected';
+            }
+        }
+
+        function selectWifiNetwork(network) {
+            if (!network) return;
+            wifiState.selectedNetwork = network;
+            wifiState.selectedIdentifier = getWifiIdentifier(network);
+            clearWifiMessage();
+            updateWifiSelectionUI();
+            renderWifiNetworks();
+        }
+
+        function setWifiAuthType(value) {
+            wifiState.authType = value === 'enterprise' ? 'enterprise' : 'psk';
+            updateWifiAuthUI();
+            updateWifiConnectAvailability();
+        }
+
+        function updateWifiSelectionUI() {
+            const selected = wifiState.selectedNetwork;
+            const input = document.getElementById('wifi-selected-ssid');
+            if (input) {
+                input.value = selected && (selected.ssid || selected.bssid) ? (selected.ssid || selected.bssid) : '';
+            }
+
+            wifiState.requiresPassphrase = selected ? selected.requires_passphrase !== false : true;
+
+            const pskInput = document.getElementById('wifi-psk');
+            if (pskInput && wifiState.requiresPassphrase === false) {
+                pskInput.value = '';
+            }
+
+            updateWifiAuthUI();
+        }
+
+        function updateWifiAuthUI() {
+            const options = document.querySelectorAll('#wifi-auth-options .radio-option');
+            options.forEach((option) => {
+                const input = option.querySelector('input[type="radio"]');
+                if (!input) return;
+                const active = input.value === wifiState.authType;
+                option.classList.toggle('active', active);
+                if (input.checked !== active) {
+                    input.checked = active;
+                }
+            });
+
+            const pskGroup = document.getElementById('wifi-psk-group');
+            const pskInput = document.getElementById('wifi-psk');
+            const enterpriseGroup = document.getElementById('wifi-enterprise-fields');
+
+            if (pskGroup) {
+                const showPsk = wifiState.authType === 'psk';
+                pskGroup.classList.toggle('hidden', !showPsk);
+                pskGroup.classList.toggle('disabled', wifiState.requiresPassphrase === false);
+            }
+
+            if (pskInput) {
+                const disablePsk = wifiState.authType !== 'psk' || wifiState.requiresPassphrase === false;
+                pskInput.disabled = disablePsk;
+                if (disablePsk) {
+                    pskInput.value = '';
+                }
+            }
+
+            if (enterpriseGroup) {
+                enterpriseGroup.classList.toggle('hidden', wifiState.authType !== 'enterprise');
+            }
+        }
+
+        function updateWifiConnectAvailability() {
+            const button = document.getElementById('wifi-connect-btn');
+            if (!button) return;
+
+            const selected = wifiState.selectedNetwork;
+            const hasSsid = Boolean(selected && selected.ssid);
+            let ready = hasSsid;
+
+            if (wifiState.authType === 'enterprise') {
+                const usernameInput = document.getElementById('wifi-username');
+                const passwordInput = document.getElementById('wifi-password');
+                ready = ready && Boolean(usernameInput && usernameInput.value.trim()) && Boolean(passwordInput && passwordInput.value);
+            } else if (wifiState.requiresPassphrase) {
+                const pskInput = document.getElementById('wifi-psk');
+                ready = ready && Boolean(pskInput && pskInput.value);
+            }
+
+            if (wifiState.connecting || wifiState.loading) {
+                ready = false;
+            }
+
+            button.disabled = !ready;
+        }
+
+        async function onWifiConnectClick() {
+            if (wifiState.connecting) return;
+            const button = document.getElementById('wifi-connect-btn');
+            if (!button || button.disabled) {
+                return;
+            }
+
+            const selected = wifiState.selectedNetwork;
+            if (!selected || !selected.ssid) {
+                setWifiMessage('Select a visible network to connect.', 'error');
+                return;
+            }
+
+            const payload = { ssid: selected.ssid };
+            if (selected.bssid) {
+                payload.bssid = selected.bssid;
+            }
+
+            if (wifiState.authType === 'enterprise') {
+                const usernameInput = document.getElementById('wifi-username');
+                const passwordInput = document.getElementById('wifi-password');
+                const username = usernameInput ? usernameInput.value.trim() : '';
+                const password = passwordInput ? passwordInput.value : '';
+                if (!username || !password) {
+                    setWifiMessage('Enter both username and password.', 'error');
+                    return;
+                }
+                payload.username = username;
+                payload.password = password;
+            } else if (wifiState.requiresPassphrase) {
+                const pskInput = document.getElementById('wifi-psk');
+                const psk = pskInput ? pskInput.value : '';
+                if (!psk) {
+                    setWifiMessage('Enter the network passphrase.', 'error');
+                    return;
+                }
+                payload.psk = psk;
+            }
+
+            wifiState.connecting = true;
+            updateWifiConnectAvailability();
+            const originalLabel = button.textContent;
+            button.textContent = 'Connecting…';
+            setWifiMessage('Connecting…');
+
+            try {
+                const response = await fetch('/api/wifi/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) {
+                    throw new Error((data && data.error) || `Request failed (${response.status})`);
+                }
+
+                setWifiMessage(data.message || 'Connected successfully.', 'success');
+                await refreshWifiNetworks(true, { preserveMessage: true });
+                const pskInput = document.getElementById('wifi-psk');
+                if (pskInput) {
+                    pskInput.value = '';
+                }
+            } catch (error) {
+                console.error('Failed to connect to Wi-Fi', error);
+                setWifiMessage(error.message || 'Unable to connect to Wi-Fi.', 'error');
+            } finally {
+                wifiState.connecting = false;
+                button.textContent = originalLabel;
+                updateWifiConnectAvailability();
+            }
+        }
+
 
         function estimatePercentFromCellVoltage(cellVoltage) {
             if (!Number.isFinite(cellVoltage)) return null;
@@ -1075,6 +1711,19 @@
 
             if (button) {
                 button.classList.toggle('active', show);
+            }
+
+            if (show) {
+                initializeWifiSettings();
+                const now = Date.now();
+                if (!wifiState.lastScan || (now - wifiState.lastScan) > 15000 || !wifiState.networks.length) {
+                    refreshWifiNetworks(true);
+                } else {
+                    renderWifiNetworks();
+                    updateWifiStatusDisplay();
+                    updateWifiSelectionUI();
+                    updateWifiConnectAvailability();
+                }
             }
         }
 
