@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -94,6 +95,31 @@ class WifiManager:
             stderr = (result.stderr or "").strip()
             stdout = (result.stdout or "").strip()
             message = stderr or stdout or "nmcli command failed"
+
+            if "insufficient" in message.lower() and "privilege" in message.lower():
+                if hasattr(os, "geteuid"):
+                    try:
+                        if os.geteuid() != 0:
+                            message = (
+                                "Insufficient privileges to manage Wi-Fi. "
+                                "Run the control server as root or grant nmcli permissions via polkit."
+                            )
+                        else:
+                            message = (
+                                "NetworkManager denied the request due to insufficient privileges. "
+                                "Ensure the nmcli polkit rules allow this action."
+                            )
+                    except OSError:
+                        message = (
+                            "Insufficient privileges to manage Wi-Fi. "
+                            "Run the control server as root or grant nmcli permissions via polkit."
+                        )
+                else:
+                    message = (
+                        "Insufficient privileges to manage Wi-Fi. "
+                        "Run the control server as root or grant nmcli permissions via polkit."
+                    )
+
             raise WifiError(message)
 
         return result.stdout

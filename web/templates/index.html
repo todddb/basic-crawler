@@ -452,13 +452,36 @@
             display: flex;
             flex-direction: column;
             align-items: flex-end;
-            gap: 3px;
+            gap: 4px;
             font-size: 12px;
         }
 
         .wifi-signal-bars {
-            font-size: 16px;
-            letter-spacing: 1px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+            gap: 3px;
+            height: 18px;
+        }
+
+        .wifi-signal-bar {
+            width: 5px;
+            border-radius: 2px 2px 0 0;
+            background: rgba(255, 255, 255, 0.14);
+            transition: background 0.2s ease, opacity 0.2s ease;
+        }
+
+        .wifi-signal-bar.active {
+            background: linear-gradient(180deg, rgba(160, 255, 173, 0.95), rgba(76, 175, 80, 0.95));
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+        }
+
+        .wifi-network-item:hover .wifi-signal-bar.active {
+            background: linear-gradient(180deg, rgba(184, 255, 193, 1), rgba(88, 200, 94, 1));
+        }
+
+        .wifi-signal-percent {
+            color: rgba(255, 255, 255, 0.7);
         }
 
         .wifi-message {
@@ -1068,14 +1091,35 @@
             setWifiMessage('');
         }
 
-        function getWifiSignalBars(signal) {
-            if (!Number.isFinite(signal)) return '····';
+        const WIFI_SIGNAL_BAR_HEIGHTS = [6, 10, 14, 18];
+
+        function getWifiSignalLevel(signal) {
+            if (!Number.isFinite(signal)) return 0;
             const value = Math.max(0, Math.min(100, Number(signal)));
-            if (value >= 80) return '▂▄▆█';
-            if (value >= 60) return '▂▄▆▆';
-            if (value >= 40) return '▂▄▄▄';
-            if (value >= 20) return '▂···';
-            return '····';
+            if (value >= 80) return 4;
+            if (value >= 60) return 3;
+            if (value >= 40) return 2;
+            if (value >= 20) return 1;
+            return 0;
+        }
+
+        function createWifiSignalBars(signal) {
+            const container = document.createElement('div');
+            container.className = 'wifi-signal-bars';
+            container.setAttribute('aria-hidden', 'true');
+
+            const level = getWifiSignalLevel(signal);
+            WIFI_SIGNAL_BAR_HEIGHTS.forEach((height, index) => {
+                const bar = document.createElement('span');
+                bar.className = 'wifi-signal-bar';
+                bar.style.height = `${height}px`;
+                if (index < level) {
+                    bar.classList.add('active');
+                }
+                container.appendChild(bar);
+            });
+
+            return container;
         }
 
         function formatWifiSignalPercent(signal) {
@@ -1241,11 +1285,10 @@
                 const signal = document.createElement('div');
                 signal.className = 'wifi-network-signal';
 
-                const bars = document.createElement('div');
-                bars.className = 'wifi-signal-bars';
-                bars.textContent = getWifiSignalBars(network.signal);
+                const bars = createWifiSignalBars(network.signal);
 
                 const percent = document.createElement('div');
+                percent.className = 'wifi-signal-percent';
                 percent.textContent = formatWifiSignalPercent(network.signal);
 
                 signal.appendChild(bars);
