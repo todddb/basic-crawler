@@ -354,6 +354,23 @@
             border-color: rgba(76, 175, 80, 0.65);
         }
 
+        .wifi-selected-display {
+            width: 100%;
+            min-height: 38px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.35);
+            color: #fff;
+            display: flex;
+            align-items: center;
+        }
+
+        .wifi-selected-display.placeholder {
+            color: rgba(255, 255, 255, 0.55);
+            font-style: italic;
+        }
+
         .wifi-status-line {
             display: flex;
             align-items: center;
@@ -919,7 +936,7 @@
                 </div>
                 <div class="settings-option-group column">
                     <label for="wifi-selected-ssid">Selected Network</label>
-                    <input id="wifi-selected-ssid" type="text" placeholder="Select a network" readonly>
+                    <div id="wifi-selected-ssid" class="wifi-selected-display placeholder" aria-live="polite">Select a network</div>
                 </div>
                 <div class="settings-option-group column">
                     <label>Authentication</label>
@@ -1003,6 +1020,7 @@
         let camerasActive = false;
         let frontCameraActive = false;
         let rearCameraActive = false;
+        let cameraProfileInitialized = false;
         let motorSendScheduled = false;
         let lastMotorSend = 0;
         const MOTOR_COMMAND_INTERVAL = 60; // ms
@@ -1024,11 +1042,20 @@
         const odometryCtx = odometryCanvas ? odometryCanvas.getContext('2d') : null;
 
         const odometryReturnButton = document.getElementById('odometry-return');
+        const settingsPanel = document.getElementById('settings-panel');
         const RETURN_BUTTON_LABEL = 'Return to start';
         if (odometryReturnButton) {
             odometryReturnButton.textContent = RETURN_BUTTON_LABEL;
             odometryReturnButton.dataset.defaultLabel = RETURN_BUTTON_LABEL;
             odometryReturnButton.disabled = true;
+        }
+
+        if (settingsPanel) {
+            ['mousedown', 'touchstart', 'click'].forEach((eventName) => {
+                settingsPanel.addEventListener(eventName, (event) => {
+                    event.stopPropagation();
+                }, { capture: true });
+            });
         }
 
         const inputState = {
@@ -1134,7 +1161,8 @@
 
             const refreshButton = document.getElementById('wifi-refresh');
             if (refreshButton) {
-                refreshButton.addEventListener('click', () => {
+                refreshButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
                     refreshWifiNetworks(true);
                 });
             }
@@ -1297,7 +1325,8 @@
                 button.appendChild(label);
                 button.appendChild(signal);
 
-                button.addEventListener('click', () => {
+                button.addEventListener('click', (event) => {
+                    event.stopPropagation();
                     selectWifiNetwork(network);
                 });
 
@@ -1336,9 +1365,16 @@
 
         function updateWifiSelectionUI() {
             const selected = wifiState.selectedNetwork;
-            const input = document.getElementById('wifi-selected-ssid');
-            if (input) {
-                input.value = selected && (selected.ssid || selected.bssid) ? (selected.ssid || selected.bssid) : '';
+            const display = document.getElementById('wifi-selected-ssid');
+            if (display) {
+                const name = selected && (selected.ssid || selected.bssid) ? (selected.ssid || selected.bssid) : '';
+                if (name) {
+                    display.textContent = name;
+                    display.classList.remove('placeholder');
+                } else {
+                    display.textContent = 'Select a network';
+                    display.classList.add('placeholder');
+                }
             }
 
             wifiState.requiresPassphrase = selected ? selected.requires_passphrase !== false : true;
@@ -1410,7 +1446,10 @@
             button.disabled = !ready;
         }
 
-        async function onWifiConnectClick() {
+        async function onWifiConnectClick(event) {
+            if (event) {
+                event.stopPropagation();
+            }
             if (wifiState.connecting) return;
             const button = document.getElementById('wifi-connect-btn');
             if (!button || button.disabled) {
@@ -2714,14 +2753,33 @@
             fetch('/api/status')
                 .then(res => res.json())
                 .then(data => {
-                    if (data && data.cameras && data.cameras.profile) {
-                        const select = document.getElementById('quality-select');
-                        if (select && data.cameras.profile !== select.value) {
-                            select.value = data.cameras.profile;
+                    const select = document.getElementById('quality-select');
+                    if (!select) {
+                        return;
+                    }
+
+                    const profile = data && data.cameras ? data.cameras.profile : null;
+                    if (profile) {
+                        if (select.value !== profile) {
+                            select.value = profile;
                         }
+                        cameraProfileInitialized = true;
+                    } else if (!cameraProfileInitialized) {
+                        if (select.value !== 'low') {
+                            select.value = 'low';
+                        }
+                        cameraProfileInitialized = true;
+                        changeStreamQuality('low');
+                    } else if (!select.value) {
+                        select.value = 'low';
                     }
                 })
-                .catch(() => {});
+                .catch(() => {
+                    const select = document.getElementById('quality-select');
+                    if (select && !cameraProfileInitialized && select.value !== 'low') {
+                        select.value = 'low';
+                    }
+                });
         }
 
         setInterval(refreshStatus, 2000);
