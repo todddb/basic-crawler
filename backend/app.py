@@ -193,6 +193,56 @@ def api_wifi_connect():
     return jsonify({"success": True, **result})
 
 
+@app.route("/api/wifi/hotspot/status", methods=["GET"])
+def api_wifi_hotspot_status():
+    if not wifi_manager:
+        return jsonify({"success": False, "error": "Wi-Fi manager unavailable"}), 503
+
+    try:
+        status = wifi_manager.get_hotspot_status()
+    except WifiError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+    return jsonify({"success": True, **status})
+
+
+@app.route("/api/wifi/hotspot/start", methods=["POST"])
+def api_wifi_hotspot_start():
+    if not wifi_manager:
+        return jsonify({"success": False, "error": "Wi-Fi manager unavailable"}), 503
+
+    data = request.get_json(force=True, silent=True) or {}
+    ssid = data.get("ssid") or data.get("name") or "crawler"
+    password = data.get("password") or data.get("psk") or "crawler1234"
+    band = data.get("band") or "bg"
+    channel = data.get("channel")
+
+    try:
+        result = wifi_manager.start_hotspot(
+            ssid=ssid,
+            password=password,
+            band=band,
+            channel=channel,
+        )
+    except WifiError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    return jsonify({"success": True, **result})
+
+
+@app.route("/api/wifi/hotspot/stop", methods=["POST"])
+def api_wifi_hotspot_stop():
+    if not wifi_manager:
+        return jsonify({"success": False, "error": "Wi-Fi manager unavailable"}), 503
+
+    try:
+        result = wifi_manager.stop_hotspot()
+    except WifiError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    return jsonify({"success": True, **result})
+
+
 @app.route("/api/shutdown", methods=["POST"])
 def api_shutdown():
     if not hardware_manager:

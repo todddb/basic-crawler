@@ -113,6 +113,12 @@ class WifiManager:
             stdout = (result.stdout or "").strip()
             message = stderr or stdout or "nmcli command failed"
 
+            if "textual authentication agent" in message.lower() or "/dev/tty" in message:
+                message = (
+                    "Authentication prompt could not be shown. Run the control server as root "
+                    "or configure pkexec/polkit so nmcli can run without a tty."
+                )
+
             if "insufficient" in message.lower() and "privilege" in message.lower():
                 if not attempted_priv_escalation:
                     wrapped_command = self._wrap_with_pkexec(base_command)
@@ -196,6 +202,29 @@ class WifiManager:
             raise WifiError("Failed to store CA certificate") from exc
 
         return str(cert_path)
+
+    def _connection_exists(self, name: str) -> bool:
+        output = self._run_nmcli(["--fields", "NAME", "connection", "show"])
+        for line in output.strip().splitlines():
+            if self._unescape(line).strip() == name:
+                return True
+        return False
+
+    def _is_connection_active(self, name: str) -> bool:
+        output = self._run_nmcli(["--fields", "NAME", "connection", "show", "--active"])
+        for line in output.strip().splitlines():
+            if self._unescape(line).strip() == name:
+                return True
+        return False
+
+    def _get_connection_value(self, name: str, field: str) -> Optional[str]:
+        try:
+            output = self._run_nmcli(["--get-values", field, "connection", "show", name])
+        except WifiError:
+            return None
+
+        value = (output or "").strip()
+        return self._unescape(value) if value else None
 
     # ------------------------------------------------------------------
     # Public API
@@ -402,4 +431,112 @@ class WifiManager:
             "message": message,
             "active": scan_result.get("active"),
             "networks": scan_result.get("networks"),
+        }
+
+    def start_hotspot(
+        self,
+        *,
+        ssid: str = "crawler",
+        password: str = "crawler1234",
+        band: str = "bg",
+        channel: Optional[int] = None,
+        connection_name: str = "crawler-hotspot",
+    ) -> Dict[str, object]:
+        device = self._get_wifi_device()
+        if not device:
+            raise WifiError("No Wi-Fi device available for hotspot")
+
+        ssid = (ssid or "crawler").strip()
+        if not ssid:
+            raise WifiError("Hotspot SSID cannot be empty")
+
+        if not password or len(password) < 8:
+            raise WifiError("Hotspot password must be at least 8 characters")
+
+        if band not in {"a", "bg"}:
+            raise WifiError("Band must be 'a' (5GHz) or 'bg' (2.4GHz)")
+
+        if not self._connection_exists(connection_name):
+            self._run_nmcli(
+                [
+                    "connection",
+                    "add",
+                    "type",
+                    "wifi",
+                    "ifname",
+                    device,
+                    "con-name",
+                    connection_name,
+                    "autoconnect",
+                    "no",
+                    "ssid",
+                    ssid,
+                ]
+            )
+
+        modify_args = [
+            "connection",
+            "modify",
+            connection_name,
+            "802-11-wireless.mode",
+            "ap",
+            "802-11-wireless.band",
+            band,
+            "ipv4.method",
+            "shared",
+            "ipv6.method",
+            "shared",
+            "wifi-sec.key-mgmt",
+            "wpa-psk",
+            "wifi-sec.psk",
+            password,
+            "connection.autoconnect",
+            "no",
+        ]
+
+        if channel:
+            modify_args.extend(["802-11-wireless.channel", str(int(channel))])
+        else:
+            modify_args.extend(["802-11-wireless.channel", ""])
+
+        self._run_nmcli(modify_args)
+
+        if ssid:
+            self._run_nmcli([
+                "connection",
+                "modify",
+                connection_name,
+                "802-11-wireless.ssid",
+                ssid,
+            ])
+
+        self._run_nmcli(["connection", "up", connection_name, "ifname", device])
+
+        return {
+            "message": f"Hotspot '{ssid}' enabled",
+            "ssid": ssid,
+            "password": password,
+            "connection_name": connection_name,
+            "active": True,
+        }
+
+    def stop_hotspot(self, connection_name: str = "crawler-hotspot") -> Dict[str, object]:
+        self._run_nmcli_allow_fail(["connection", "down", connection_name])
+
+        return {
+            "message": "Hotspot stopped",
+            "connection_name": connection_name,
+            "active": False,
+        }
+
+    def get_hotspot_status(self, connection_name: str = "crawler-hotspot") -> Dict[str, object]:
+        exists = self._connection_exists(connection_name)
+        active = self._is_connection_active(connection_name) if exists else False
+        ssid = self._get_connection_value(connection_name, "802-11-wireless.ssid") if exists else None
+
+        return {
+            "connection_name": connection_name,
+            "exists": exists,
+            "active": active,
+            "ssid": ssid,
         }
