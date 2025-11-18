@@ -106,6 +106,18 @@ This repository contains the software for a Raspberry Pi 5-based crawler robot w
   sudo systemctl start crawler
   ```
 
+## Wi-Fi notes
+
+The Flask API already exposes endpoints for network scanning (`/api/wifi/networks`) and connecting (`/api/wifi/connect`). If WPA2-Enterprise prompts fail with an error such as `Error creating textual authentication agent (/dev/tty)`, run the control server as `root` or add a `pkexec`/polkit rule that lets `nmcli` execute without opening an interactive terminal.
+
+To offer a fallback access method, the backend now includes a small hotspot helper that can run alongside normal infrastructure Wi-Fi (hardware permitting). Use the following calls:
+
+* `POST /api/wifi/hotspot/start` with optional JSON body `{ "ssid": "crawler", "password": "crawler1234", "band": "bg", "channel": 6 }` to broadcast a WPA2-PSK network that shares the Pi's upstream connection.
+* `POST /api/wifi/hotspot/stop` to turn the hotspot off.
+* `GET /api/wifi/hotspot/status` to see whether the hotspot profile exists and whether it is active.
+
+Most Wi-Fi chipsets can handle station mode plus an AP on 2.4 GHz, but if the interface cannot multitask it may need to drop the infrastructure connection while the hotspot is active. In that case, start the hotspot only when you intend to manage the crawler locally, then stop it before reconnecting to an existing network.
+
 
 ## Support
 
