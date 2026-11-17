@@ -333,12 +333,22 @@ class WifiManager:
 
         connection_name = ssid
 
+        add_args = [
+            "connection",
+            "add",
+            "type",
+            "wifi",
+            "ifname",
+            device,
+            "con-name",
+            connection_name,
+            "ssid",
+            ssid,
+        ]
+
         if username:
             if not password:
                 raise WifiError("Password is required for enterprise Wi-Fi")
-
-            # Remove any existing connection with the same name to avoid conflicts.
-            self._run_nmcli_allow_fail(["connection", "delete", "id", connection_name])
 
             eap = (eap_method or "peap").strip().lower()
             if eap not in {"peap", "ttls"}:
@@ -356,17 +366,7 @@ class WifiManager:
             if ca_cert_pem:
                 cert_path = self._store_ca_certificate(ca_cert_pem)
 
-            add_args = [
-                "connection",
-                "add",
-                "type",
-                "wifi",
-                "ifname",
-                device,
-                "con-name",
-                connection_name,
-                "ssid",
-                ssid,
+            add_args.extend([
                 "wifi-sec.key-mgmt",
                 "wpa-eap",
                 "802-1x.eap",
@@ -377,7 +377,7 @@ class WifiManager:
                 username,
                 "802-1x.password",
                 password,
-            ]
+            ])
 
             if anonymous_identity:
                 add_args.extend([
@@ -400,31 +400,26 @@ class WifiManager:
             if cert_path:
                 add_args.extend(["802-1x.ca-cert", cert_path])
 
-            if bssid:
-                add_args.extend(["wifi.bssid", bssid])
+        elif psk:
+            add_args.extend([
+                "wifi-sec.key-mgmt",
+                "wpa-psk",
+                "wifi-sec.psk",
+                psk,
+            ])
+        # Otherwise this is an open network: no wifi-sec settings at all.
 
-            self._run_nmcli(add_args)
-            self._run_nmcli(["connection", "modify", connection_name, "connection.autoconnect", "yes"])
-            self._run_nmcli(["connection", "up", connection_name])
-            message = f"Connected to {ssid}"
-        else:
-            connect_args = [
-                "device",
-                "wifi",
-                "connect",
-                ssid,
-                "ifname",
-                device,
-            ]
+        if bssid:
+            add_args.extend(["wifi.bssid", bssid])
 
-            if bssid:
-                connect_args.extend(["bssid", bssid])
+        # Remove any existing connection with the same name so a stale profile
+        # (e.g. one missing key-mgmt) cannot interfere with the new one.
+        self._run_nmcli_allow_fail(["connection", "delete", "id", connection_name])
 
-            if psk:
-                connect_args.extend(["password", psk])
-
-            self._run_nmcli(connect_args)
-            message = f"Connected to {ssid}"
+        self._run_nmcli(add_args)
+        self._run_nmcli(["connection", "modify", connection_name, "connection.autoconnect", "yes"])
+        self._run_nmcli(["connection", "up", connection_name])
+        message = f"Connected to {ssid}"
 
         scan_result = self.scan_networks()
         return {
